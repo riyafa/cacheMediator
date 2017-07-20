@@ -172,11 +172,11 @@ public class EICacheMediatorFactory extends AbstractMediatorFactory {
                         OMElement responseElem = protocolElem.getFirstChildWithName(RESPONSE_CODES_Q);
                         if (responseElem != null) {
                             String[] responses = responseElem.getText().split(",");
-                            for (int i = 0; i < responses.length; i++) {
-                                responses[i] = responses[i].trim();
-                                if (!"".equals(responses[0])) {
-                                    cache.setHTTPMethodsToCache(responses);
+                            if (!"".equals(responses[0])) {
+                                for (int i = 0; i < responses.length; i++) {
+                                    responses[i] = responses[i].trim();
                                 }
+                                cache.setResponseCodes(responses);
                             }
                         }
 

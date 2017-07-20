@@ -61,9 +61,9 @@ public class EICacheMediatorSerializer extends AbstractMediatorSerializer {
                 }
             }
 
-            if (CachingConstants.HTTP_PROTOCOL_TYPE.equals(cacheMediator.getType())) {
+            if (CachingConstants.HTTP_PROTOCOL_TYPE.equals(cacheMediator.getProtocolType())) {
                 OMElement protocolElem = fac.createOMElement("protocol", synNS);
-                protocolElem.addAttribute(fac.createOMAttribute("type", nullNS, cacheMediator.getType()));
+                protocolElem.addAttribute(fac.createOMAttribute("type", nullNS, cacheMediator.getProtocolType()));
 
                 String[] methods = cacheMediator.getHTTPMethodsToCache();
                 if (!(methods.length == 0 && "".equals(methods[0]))) {
@@ -122,7 +122,6 @@ public class EICacheMediatorSerializer extends AbstractMediatorSerializer {
 
             if (cacheMediator.getInMemoryCacheSize() != 0) {
                 OMElement implElem = fac.createOMElement("implementation", synNS);
-                implElem.addAttribute(fac.createOMAttribute("type", nullNS, "memory"));
                 implElem.addAttribute(fac.createOMAttribute("maxMessagesInCache", nullNS,
                                                             Integer.toString(cacheMediator.getInMemoryCacheSize())));
                 cache.addChild(implElem);
