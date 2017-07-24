@@ -26,7 +26,7 @@ public class HttpRequestHashGenerator implements DigestGenerator {
 
     public String getDigest(MessageContext msgContext, boolean isGet, String... headers) throws CachingException {
         if (headers.length > 0) {
-            boolean excludeAllHeaders = "all".equals(headers[0]);
+            boolean excludeAllHeaders = "exclude-all".equals(headers[0]);
             if (!excludeAllHeaders) {
                 Map<String, String> transportHeaders =
                         (Map<String, String>) msgContext.getProperty(MessageContext.TRANSPORT_HEADERS);
@@ -47,7 +47,7 @@ public class HttpRequestHashGenerator implements DigestGenerator {
                         toAddress = msgContext.getTo().getAddress();
                     }
                     if (body != null) {
-                        byte[] digest = null;
+                        byte[] digest;
                         if (toAddress != null) {
                             digest = getDigest(body, toAddress, transportHeaders, MD5_DIGEST_ALGORITHM);
                         } else {

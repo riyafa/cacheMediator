@@ -53,4 +53,14 @@ public class CachingConstants {
      * The regex for the 2xx response code
      */
     public static final String RESPONSE_CODE = "2[0-9][0-9]";
+
+    /**
+     * String key to store the the request hash in the message contetx
+     */
+    public static final String REQUEST_HASH = "requestHash";
+
+    /**
+     * String key to store the cached response in the message context
+     */
+    public static final String CACHED_OBJECT = "CachableResponse";
 }

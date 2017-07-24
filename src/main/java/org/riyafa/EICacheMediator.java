@@ -1,21 +1,53 @@
 package org.riyafa;
 
+import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.CacheLoader;
+import com.google.common.cache.LoadingCache;
+import org.apache.axiom.om.OMElement;
+import org.apache.axiom.om.util.AXIOMUtil;
+import org.apache.axiom.soap.SOAPEnvelope;
+import org.apache.axiom.soap.SOAPFactory;
+import org.apache.axiom.soap.SOAPHeader;
+import org.apache.axiom.soap.SOAPHeaderBlock;
+import org.apache.axis2.Constants;
+import org.apache.axis2.clustering.ClusteringFault;
+import org.apache.axis2.clustering.state.Replicator;
+import org.apache.axis2.context.ConfigurationContext;
+import org.apache.axis2.context.OperationContext;
 import org.apache.synapse.ManagedLifecycle;
 import org.apache.synapse.Mediator;
 import org.apache.synapse.MessageContext;
+import org.apache.synapse.SynapseException;
 import org.apache.synapse.SynapseLog;
+import org.apache.synapse.commons.json.JsonUtil;
 import org.apache.synapse.config.SynapseConfiguration;
+import org.apache.synapse.continuation.ContinuationStackManager;
 import org.apache.synapse.core.SynapseEnvironment;
+import org.apache.synapse.core.axis2.Axis2MessageContext;
+import org.apache.synapse.core.axis2.Axis2Sender;
 import org.apache.synapse.debug.constructs.EnclosedInlinedSequence;
 import org.apache.synapse.mediators.AbstractMediator;
 import org.apache.synapse.mediators.base.SequenceMediator;
+import org.apache.synapse.util.FixedByteArrayOutputStream;
+import org.apache.synapse.util.MessageHelper;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import javax.xml.stream.XMLStreamException;
 
 /**
  * Created by riyafa on 7/10/17.
  */
 public class EICacheMediator extends AbstractMediator implements ManagedLifecycle, EnclosedInlinedSequence {
+
+    private final static String JSON_CONTENT_TYPE = "application/json";
+    private final static String XML_CONTENT_TYPE = "application/xml";
     /**
      * Cache configuration ID.
      */
@@ -86,16 +118,44 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
     private int inMemoryCacheSize = CachingConstants.DEFAULT_CACHE_SIZE;
 
     /**
+     * Variable to represent 'NO_ENTITY_BODY' property of synapse
+     */
+    private static final String NO_ENTITY_BODY = "NO_ENTITY_BODY";
+
+    /**
+     * String variable representing SOAP Header element
+     */
+    private static final String HEADER = "Header";
+
+
+    /**
      * This holds whether the global cache already initialized or not.
      */
     private static AtomicBoolean mediatorCacheInit = new AtomicBoolean(false);
 
-    public void init(SynapseEnvironment synapseEnvironment) {
+    private LoadingCache<String, CachableResponse> cache;
 
+    public EICacheMediator() {
+        cache = CacheBuilder.newBuilder().expireAfterWrite(timeout, TimeUnit.SECONDS).maximumSize(
+                maxMessageSize * inMemoryCacheSize).build(
+                new CacheLoader<String, CachableResponse>() {
+                    @Override
+                    public CachableResponse load(String requestHash) throws Exception {
+                        return cacheNewResponse(requestHash);
+                    }
+                });
+    }
+
+    public void init(SynapseEnvironment se) {
+        if (onCacheHitSequence != null) {
+            onCacheHitSequence.init(se);
+        }
     }
 
     public void destroy() {
-
+        if (onCacheHitSequence != null) {
+            onCacheHitSequence.destroy();
+        }
     }
 
     public boolean mediate(MessageContext synCtx) {
@@ -105,8 +165,275 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
             }
         }
         SynapseLog synLog = getLog(synCtx);
+        if (synLog.isTraceOrDebugEnabled()) {
+            synLog.traceOrDebug("Start : Cache mediator");
 
+            if (synLog.isTraceTraceEnabled()) {
+                synLog.traceTrace("Message : " + synCtx.getEnvelope());
+            }
+        }
+
+        ConfigurationContext cfgCtx = ((Axis2MessageContext) synCtx).getAxis2MessageContext().getConfigurationContext();
+
+        if (cfgCtx == null) {
+            handleException("Unable to perform caching,  ConfigurationContext cannot be found", synCtx);
+            return false; // never executes.. but keeps IDE happy
+        }
+        try {
+            if (synCtx.isResponse()) {
+                processResponseMessage(synCtx, cfgCtx, synLog);
+            } else {
+                processRequestMessage(synCtx, synLog);
+            }
+        } catch (ClusteringFault clusteringFault) {
+            synLog.traceOrDebug("Unable to replicate Cache mediator state among the cluster");
+        } catch (ExecutionException e) {
+            synLog.traceOrDebug("Unable to get the response");
+
+        }
         return false;
+    }
+
+    private CachableResponse cacheNewResponse(String requestHash) {
+        CachableResponse response = new CachableResponse();
+        response.setRequestHash(requestHash);
+        response.setTimeout(timeout);
+        return response;
+    }
+
+    private void processRequestMessage(MessageContext synCtx, SynapseLog synLog)
+            throws ExecutionException, ClusteringFault {
+        if (collector) {
+            handleException("Request messages cannot be handled in a collector cache", synCtx);
+        }
+        OperationContext opCtx = ((Axis2MessageContext) synCtx).getAxis2MessageContext().getOperationContext();
+        String requestHash = null;
+        try {
+            requestHash = digestGenerator.getDigest(((Axis2MessageContext) synCtx).getAxis2MessageContext(),
+                                                    getHTTPMethodsToCache().length == 0 &&
+                                                            getHTTPMethodsToCache()[0]
+                                                                    .equals(CachingConstants.HTTP_METHOD_GET),
+                                                    getHeadersToExcludeInHash());
+            synCtx.setProperty(CachingConstants.REQUEST_HASH, requestHash);
+        } catch (CachingException e) {
+            handleException("Error in calculating the hash value of the request", e, synCtx);
+        }
+        if (synLog.isTraceOrDebugEnabled()) {
+            synLog.traceOrDebug("Generated request hash : " + requestHash);
+        }
+        org.apache.axis2.context.MessageContext msgCtx =
+                ((Axis2MessageContext) synCtx).getAxis2MessageContext();
+        opCtx.setProperty(CachingConstants.REQUEST_HASH, requestHash);
+        CachableResponse cachedResponse = cache.get(requestHash);
+        opCtx.setProperty(CachingConstants.CACHED_OBJECT, cachedResponse);
+        Replicator.replicate(opCtx);
+        Map<String, Object> headerProperties;
+
+        if (cachedResponse.getResponsePayload() != null) {
+            // get the response from the cache and attach to the context and change the
+            // direction of the message
+            if (!cachedResponse.isExpired()) {
+                if (synLog.isTraceOrDebugEnabled()) {
+                    synLog.traceOrDebug("Cache-hit for message ID : " + synCtx.getMessageID());
+                }
+                // mark as a response and replace envelope from cache
+                synCtx.setResponse(true);
+                OMElement response = null;
+                if (msgCtx.isDoingREST()) {
+
+                    String replacementValue = new String(cachedResponse.getResponsePayload());
+                    try {
+                        response = AXIOMUtil.stringToOM(replacementValue);
+                    } catch (XMLStreamException e) {
+                        handleException("Error creating response OM from cache : " + id, synCtx);
+                    }
+                    if ((headerProperties = cachedResponse.getHeaderProperties()) != null) {
+
+                        msgCtx.removeProperty(NO_ENTITY_BODY);
+                        msgCtx.removeProperty(Constants.Configuration.CONTENT_TYPE);
+                        msgCtx.setProperty(org.apache.axis2.context.MessageContext.TRANSPORT_HEADERS,
+                                           headerProperties);
+                        msgCtx.setProperty(Constants.Configuration.MESSAGE_TYPE,
+                                           headerProperties.get(Constants.Configuration.MESSAGE_TYPE));
+                    }
+
+                } else {
+                    String replacementValue = new String(cachedResponse.getResponsePayload());
+                    try {
+                        response = AXIOMUtil.stringToOM(replacementValue);
+                    } catch (XMLStreamException e) {
+                        handleException("Error creating response OM from cache : " + id, synCtx);
+                    }
+                }//ToDo JSON
+
+                if (response != null) {
+                    // Set the headers of the message
+                    if (response.getFirstElement().getLocalName().contains(HEADER)) {
+                        Iterator childElements = msgCtx.getEnvelope().getHeader().getChildElements();
+                        while (childElements.hasNext()) {
+                            ((OMElement) childElements.next()).detach();
+                        }
+                        SOAPEnvelope env = synCtx.getEnvelope();
+                        SOAPHeader header = env.getHeader();
+                        SOAPFactory fac = (SOAPFactory) env.getOMFactory();
+
+                        Iterator headers = response.getFirstElement().getChildElements();
+                        while (headers.hasNext()) {
+                            OMElement soapHeader = (OMElement) headers.next();
+                            SOAPHeaderBlock hb = header.addHeaderBlock(soapHeader.getLocalName(),
+                                                                       fac.createOMNamespace(soapHeader.getNamespace()
+                                                                                                     .getNamespaceURI(),
+                                                                                             soapHeader.getNamespace()
+                                                                                                     .getPrefix()));
+                            hb.setText(soapHeader.getText());
+                        }
+                        response.getFirstElement().detach();
+                    }
+                    // Set the body of the message
+                    if (msgCtx.getEnvelope().getBody().getFirstElement() != null) {
+                        msgCtx.getEnvelope().getBody().getFirstElement().detach();
+                    }
+                    msgCtx.getEnvelope().getBody().addChild(response.getFirstElement().getFirstElement());
+
+                }
+
+                // take specified action on cache hit
+                if (onCacheHitSequence != null) {
+                    // if there is an onCacheHit use that for the mediation
+                    synLog.traceOrDebug("Delegating message to the onCachingHit "
+                                                + "Anonymous sequence");
+                    ContinuationStackManager.addReliantContinuationState(synCtx, 0, getMediatorPosition());
+                    if (onCacheHitSequence.mediate(synCtx)) {
+                        ContinuationStackManager.removeReliantContinuationState(synCtx);
+                    }
+
+                } else if (onCacheHitRef != null) {
+                    if (synLog.isTraceOrDebugEnabled()) {
+                        synLog.traceOrDebug("Delegating message to the onCachingHit " +
+                                                    "sequence : " + onCacheHitRef);
+                    }
+                    ContinuationStackManager.updateSeqContinuationState(synCtx, getMediatorPosition());
+                    synCtx.getSequence(onCacheHitRef).mediate(synCtx);
+
+                } else {
+
+                    if (synLog.isTraceOrDebugEnabled()) {
+                        synLog.traceOrDebug("Request message " + synCtx.getMessageID() +
+                                                    " was served from the cache");
+                    }
+                    // send the response back if there is not onCacheHit is specified
+                    synCtx.setTo(null);
+                    Axis2Sender.sendBack(synCtx);
+
+                }
+            } else {
+                cachedResponse.reincarnate(timeout);
+                cache.put(requestHash, cachedResponse);
+                if (synLog.isTraceOrDebugEnabled()) {
+                    synLog.traceOrDebug("Existing cached response has expired. Resetting cache element");
+                }
+
+                opCtx.setProperty(CachingConstants.CACHED_OBJECT, cachedResponse);
+                Replicator.replicate(opCtx);
+            }
+        }
+    }
+
+    private void processResponseMessage(MessageContext synCtx, ConfigurationContext cfgCtx, SynapseLog synLog)
+            throws ClusteringFault {
+        if (!collector) {
+            handleException("Response messages cannot be handled in a non collector cache", synCtx);
+        }
+        org.apache.axis2.context.MessageContext msgCtx = ((Axis2MessageContext) synCtx).getAxis2MessageContext();
+        OperationContext operationContext = msgCtx.getOperationContext();
+        String contentType = (String) msgCtx.getProperty(Constants.Configuration.CONTENT_TYPE);
+
+        CachableResponse response = (CachableResponse) operationContext.getProperty(CachingConstants.CACHED_OBJECT);
+        if (response != null) {
+            if (contentType.equals(XML_CONTENT_TYPE)) {
+                if (maxMessageSize > 0) {
+                    FixedByteArrayOutputStream fbaos = new FixedByteArrayOutputStream(maxMessageSize);
+                    try {
+                        MessageHelper.cloneSOAPEnvelope(synCtx.getEnvelope()).serialize(fbaos);
+                    } catch (XMLStreamException e) {
+                        handleException("Error in checking the message size", e, synCtx);
+                    } catch (SynapseException syne) {
+                        synLog.traceOrDebug(
+                                "Message size exceeds the upper bound for caching, request will not be cached");
+                        return;
+                    } finally {
+                        try {
+                            fbaos.close();
+                        } catch (IOException e) {
+                            handleException("Error occurred while closing the FixedByteArrayOutputStream ", e, synCtx);
+                        }
+                    }
+                }
+
+                if (synLog.isTraceOrDebugEnabled()) {
+                    synLog.traceOrDebug("Storing the response message into the cache with ID : "
+                                                + id + " for request hash : " + response.getRequestHash());
+                }
+                if (synLog.isTraceOrDebugEnabled()) {
+                    synLog.traceOrDebug(
+                            "Storing the response for the message with ID : " + synCtx.getMessageID() + " " +
+                                    "with request hash ID : " + response.getRequestHash() + " in the cache");
+                }
+                try (ByteArrayOutputStream outStream = new ByteArrayOutputStream()) {
+                    synCtx.getEnvelope().serialize(outStream);
+                    response.setResponsePayload(outStream.toByteArray());
+                } catch (XMLStreamException e) {
+                    handleException("Unable to set the response to the Cache", e, synCtx);
+                } catch (IOException e) {
+                    handleException("Error occurred while closing the FixedByteArrayOutputStream ", e, synCtx);
+                }
+                if (response.getTimeout() > 0) {
+                    response.setExpireTimeMillis(System.currentTimeMillis() + response.getTimeout());
+                }
+
+            } else if (contentType.equals(JSON_CONTENT_TYPE)) {
+                byte[] responsePayload = JsonUtil.jsonPayloadToByteArray(msgCtx);
+                if (maxMessageSize > 0) {
+                    if (responsePayload.length > maxMessageSize) {
+                        synLog.traceOrDebug(
+                                "Message size exceeds the upper bound for caching, request will not be cached");
+                        return;
+                    }
+                }
+
+                if (synLog.isTraceOrDebugEnabled()) {
+                    synLog.traceOrDebug("Storing the response message into the cache with ID : "
+                                                + id + " for request hash : " + response.getRequestHash());
+                }
+                if (synLog.isTraceOrDebugEnabled()) {
+                    synLog.traceOrDebug(
+                            "Storing the response for the message with ID : " + synCtx.getMessageID() + " " +
+                                    "with request hash ID : " + response.getRequestHash() + " in the cache");
+                }
+
+                response.setResponsePayload(responsePayload);
+
+            }
+            if (msgCtx.isDoingREST()) {
+                Map<String, String> headers =
+                        (Map) msgCtx.getProperty(org.apache.axis2.context.MessageContext.TRANSPORT_HEADERS);
+                String messageType = (String) msgCtx.getProperty(Constants.Configuration.MESSAGE_TYPE);
+                Map<String, Object> headerProperties = new HashMap<String, Object>();
+                //Individually copying All TRANSPORT_HEADERS to headerProperties Map instead putting whole
+                //TRANSPORT_HEADERS map as single Key/Value pair to fix hazelcast serialization issue.
+                for (Map.Entry<String, String> entry : headers.entrySet()) {
+                    headerProperties.put(entry.getKey(), entry.getValue());
+                }
+                headerProperties.put(Constants.Configuration.MESSAGE_TYPE, messageType);
+                response.setHeaderProperties(headerProperties);
+            }
+            cache.put(response.getRequestHash(), response);
+            // Finally, we may need to replicate the changes in the cache
+            Replicator.replicate(cfgCtx);
+        } else {
+            synLog.auditWarn("A response message without a valid mapping to the " +
+                                     "request hash found. Unable to store the response in cache");
+        }
     }
 
     public Mediator getInlineSequence(SynapseConfiguration synapseConfiguration, int i) {
