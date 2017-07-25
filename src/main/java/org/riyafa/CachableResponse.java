@@ -43,6 +43,7 @@ public class CachableResponse implements Serializable {
      */
     private Map<String, Object> headerProperties;
 
+    private boolean json;
     /**
      * This method checks whether this cached response is expired or not
      *
@@ -70,6 +71,11 @@ public class CachableResponse implements Serializable {
         setTimeout(timeout);
     }
 
+
+    public void clean() {
+        responsePayload = null;
+        headerProperties = null;
+    }
     /**
      * This method gives the cached response envelope as a String
      *
@@ -158,5 +164,13 @@ public class CachableResponse implements Serializable {
      */
     public void setHeaderProperties(Map<String, Object> headerProperties) {
         this.headerProperties = headerProperties;
+    }
+
+    public boolean isJson() {
+        return json;
+    }
+
+    public void setJson(boolean json) {
+        this.json = json;
     }
 }

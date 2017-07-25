@@ -63,4 +63,6 @@ public class CachingConstants {
      * String key to store the cached response in the message context
      */
     public static final String CACHED_OBJECT = "CachableResponse";
+
+    public static final String CACHE_KEY = "cacheKey";
 }

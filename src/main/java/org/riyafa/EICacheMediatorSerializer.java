@@ -95,20 +95,11 @@ public class EICacheMediatorSerializer extends AbstractMediatorSerializer {
                     protocolElem.addChild(headerElem);
                 }
 
-                String[] responseCodes = cacheMediator.getResponseCodes();
-                if (!(responseCodes.length == 0 && "".equals(responseCodes[0]))) {
-                    StringBuilder responseCode = new StringBuilder();
-                    for (int i = 0; i < responseCodes.length; i++) {
-                        if (i != responseCodes.length - 1) {
-                            responseCode.append(responseCodes[i]).append(",");
-                        } else {
-                            responseCode.append(responseCodes[i]);
-                        }
-                    }
-                    OMElement responseCodesElem = fac.createOMElement("responseCodes", synNS);
-                    responseCodesElem.setText(responseCode.toString());
-                    protocolElem.addChild(responseCodesElem);
-                }
+                String responseCodes = cacheMediator.getResponseCodes();
+                OMElement responseCodesElem = fac.createOMElement("responseCodes", synNS);
+                responseCodesElem.setText(responseCodes);
+                protocolElem.addChild(responseCodesElem);
+
 
                 if (cacheMediator.getDigestGenerator() != null) {
                     OMElement hashGeneratorElem = fac.createOMElement("hashGenerator", synNS);
