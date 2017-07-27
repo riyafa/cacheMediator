@@ -29,6 +29,7 @@ import org.apache.synapse.core.axis2.Axis2Sender;
 import org.apache.synapse.debug.constructs.EnclosedInlinedSequence;
 import org.apache.synapse.mediators.AbstractMediator;
 import org.apache.synapse.mediators.base.SequenceMediator;
+import org.apache.synapse.transport.nhttp.NhttpConstants;
 import org.apache.synapse.util.FixedByteArrayOutputStream;
 import org.apache.synapse.util.MessageHelper;
 
@@ -59,7 +60,7 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
     /**
      * The time duration for which the cache is kept.
      */
-    private long timeout = 0L;
+    private long timeout = CachingConstants.DEFAULT_TIMEOUT;
 
     /**
      * This specifies whether the mediator should be in the incoming path (to check the request) or in the outgoing path
@@ -70,7 +71,7 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
     /**
      * The maximum size of the messages to be cached. This is specified in bytes.
      */
-    private int maxMessageSize = 0;
+    private int maxMessageSize = -1;
 
     /**
      * The SequenceMediator to the onCacheHit sequence to be executed when an incoming message is identified as an
@@ -118,7 +119,7 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
      * The size of the messages to be cached in memory. If this is 0 then no disk cache, and if there is no size
      * specified in the config  factory will asign a default value to enable disk based caching.
      */
-    private int inMemoryCacheSize = CachingConstants.DEFAULT_CACHE_SIZE;
+    private int inMemoryCacheSize = -1;
 
     /**
      * Variable to represent 'NO_ENTITY_BODY' property of synapse
@@ -136,18 +137,7 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
      */
     private static AtomicBoolean mediatorCacheInit = new AtomicBoolean(false);
 
-    private LoadingCache<String, CachableResponse> cache;
-
-    public EICacheMediator() {
-        cache = CacheBuilder.newBuilder().expireAfterWrite(timeout, TimeUnit.SECONDS).maximumSize(
-                maxMessageSize * inMemoryCacheSize).build(
-                new CacheLoader<String, CachableResponse>() {
-                    @Override
-                    public CachableResponse load(String requestHash) throws Exception {
-                        return cacheNewResponse(requestHash);
-                    }
-                });
-    }
+    private LoadingCache<String, CachableResponse> cache = null;
 
     public void init(SynapseEnvironment se) {
         if (onCacheHitSequence != null) {
@@ -182,11 +172,12 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
             handleException("Unable to perform caching,  ConfigurationContext cannot be found", synCtx);
             return false; // never executes.. but keeps IDE happy
         }
+        boolean result = true;
         try {
             if (synCtx.isResponse()) {
                 processResponseMessage(synCtx, cfgCtx, synLog);
             } else {
-                processRequestMessage(synCtx, synLog);
+                result = processRequestMessage(synCtx, synLog);
             }
         } catch (ClusteringFault clusteringFault) {
             synLog.traceOrDebug("Unable to replicate Cache mediator state among the cluster");
@@ -194,10 +185,7 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
             synLog.traceOrDebug("Unable to get the response");
 
         }
-        if (isContinueExecution()) {
-            return true;
-        }
-        return false;
+        return result;
     }
 
     private CachableResponse cacheNewResponse(String requestHash) {
@@ -207,7 +195,7 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
         return response;
     }
 
-    private void processRequestMessage(MessageContext synCtx, SynapseLog synLog)
+    private boolean processRequestMessage(MessageContext synCtx, SynapseLog synLog)
             throws ExecutionException, ClusteringFault {
         if (collector) {
             handleException("Request messages cannot be handled in a collector cache", synCtx);
@@ -232,7 +220,7 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
             synLog.traceOrDebug("Generated request hash : " + requestHash);
         }
         opCtx.setProperty(CachingConstants.REQUEST_HASH, requestHash);
-        CachableResponse cachedResponse = cache.get(requestHash);
+        CachableResponse cachedResponse = getMediatorCache().get(requestHash);
         opCtx.setProperty(CachingConstants.CACHED_OBJECT, cachedResponse);
         Replicator.replicate(opCtx);
         Map<String, Object> headerProperties;
@@ -246,17 +234,52 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
                 }
                 // mark as a response and replace envelope from cache
                 synCtx.setResponse(true);
-                OMElement response = null;
                 try {
+                    byte[] payload = cachedResponse.getResponsePayload();
                     if (cachedResponse.isJson()) {
-
-                        response = JsonUtil.getNewJsonPayload(msgCtx, cachedResponse.getResponsePayload(), 0,
-                                                              cachedResponse.getResponsePayload().length, true, true);
+                        OMElement response = JsonUtil.getNewJsonPayload(msgCtx, payload, 0,
+                                                   payload.length, false, false);
+                        if (msgCtx.getEnvelope().getBody().getFirstElement() != null) {
+                            msgCtx.getEnvelope().getBody().getFirstElement().detach();
+                        }
+                        msgCtx.getEnvelope().getBody().addChild(response);
 
                     } else {
-                        String replacementValue = new String(cachedResponse.getResponsePayload());
+                        String replacementValue = new String(payload);
 
-                        response = AXIOMUtil.stringToOM(replacementValue);
+                        OMElement response = AXIOMUtil.stringToOM(replacementValue);
+
+                        if (response != null) {
+                            // Set the headers of the message
+                            if (response.getFirstElement().getLocalName().contains(HEADER)) {
+                                Iterator childElements = msgCtx.getEnvelope().getHeader().getChildElements();
+                                while (childElements.hasNext()) {
+                                    ((OMElement) childElements.next()).detach();
+                                }
+                                SOAPEnvelope env = synCtx.getEnvelope();
+                                SOAPHeader header = env.getHeader();
+                                SOAPFactory fac = (SOAPFactory) env.getOMFactory();
+
+                                Iterator headers = response.getFirstElement().getChildElements();
+                                while (headers.hasNext()) {
+                                    OMElement soapHeader = (OMElement) headers.next();
+                                    SOAPHeaderBlock hb = header.addHeaderBlock(soapHeader.getLocalName(),
+                                                                               fac.createOMNamespace(
+                                                                                       soapHeader.getNamespace()
+                                                                                               .getNamespaceURI(),
+                                                                                       soapHeader.getNamespace()
+                                                                                               .getPrefix()));
+                                    hb.setText(soapHeader.getText());
+                                }
+                                response.getFirstElement().detach();
+                            }
+                            // Set the body of the message
+                            if (msgCtx.getEnvelope().getBody().getFirstElement() != null) {
+                                msgCtx.getEnvelope().getBody().getFirstElement().detach();
+                            }
+                            msgCtx.getEnvelope().getBody().addChild(response.getFirstElement().getFirstElement());
+
+                        }
 
                     }
                 } catch (XMLStreamException | AxisFault e) {
@@ -276,36 +299,6 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
                     }
                 }
 
-                if (response != null) {
-                    // Set the headers of the message
-                    if (response.getFirstElement().getLocalName().contains(HEADER)) {
-                        Iterator childElements = msgCtx.getEnvelope().getHeader().getChildElements();
-                        while (childElements.hasNext()) {
-                            ((OMElement) childElements.next()).detach();
-                        }
-                        SOAPEnvelope env = synCtx.getEnvelope();
-                        SOAPHeader header = env.getHeader();
-                        SOAPFactory fac = (SOAPFactory) env.getOMFactory();
-
-                        Iterator headers = response.getFirstElement().getChildElements();
-                        while (headers.hasNext()) {
-                            OMElement soapHeader = (OMElement) headers.next();
-                            SOAPHeaderBlock hb = header.addHeaderBlock(soapHeader.getLocalName(),
-                                                                       fac.createOMNamespace(soapHeader.getNamespace()
-                                                                                                     .getNamespaceURI(),
-                                                                                             soapHeader.getNamespace()
-                                                                                                     .getPrefix()));
-                            hb.setText(soapHeader.getText());
-                        }
-                        response.getFirstElement().detach();
-                    }
-                    // Set the body of the message
-                    if (msgCtx.getEnvelope().getBody().getFirstElement() != null) {
-                        msgCtx.getEnvelope().getBody().getFirstElement().detach();
-                    }
-                    msgCtx.getEnvelope().getBody().addChild(response.getFirstElement().getFirstElement());
-
-                }
 
                 // take specified action on cache hit
                 if (onCacheHitSequence != null) {
@@ -333,12 +326,15 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
                     }
                     // send the response back if there is not onCacheHit is specified
                     synCtx.setTo(null);
-                    Axis2Sender.sendBack(synCtx);
+                    Axis2Sender.sendBack(synCtx);//Todo
 
+                }
+                if (!continueExecution) {//Todo
+                    return false;
                 }
             } else {
                 cachedResponse.reincarnate(timeout);
-                cache.put(requestHash, cachedResponse);
+                getMediatorCache().put(requestHash, cachedResponse);
                 if (synLog.isTraceOrDebugEnabled()) {
                     synLog.traceOrDebug("Existing cached response has expired. Resetting cache element");
                 }
@@ -347,6 +343,7 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
                 Replicator.replicate(opCtx);
             }
         }
+        return true;
     }
 
     @SuppressWarnings("unchecked")
@@ -359,11 +356,9 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
         OperationContext operationContext = msgCtx.getOperationContext();
         CachableResponse response = (CachableResponse) operationContext.getProperty(CachingConstants.CACHED_OBJECT);
 
-        Map<String, String> headers =
-                (Map<String, String>) msgCtx.getProperty(org.apache.axis2.context.MessageContext.TRANSPORT_HEADERS);
         boolean toCache = false;
         if (CachingConstants.HTTP_PROTOCOL_TYPE.equals(protocolType)) {
-            String statusCode = headers.get("HTTP_SC");
+            String statusCode = msgCtx.getProperty(NhttpConstants.HTTP_SC).toString();
             // Create a Pattern object
             Pattern r = Pattern.compile(responseCodes);
             // Now create matcher object.
@@ -379,9 +374,9 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
 
         if (toCache) {
             if (response != null) {
-                String contentType = (String) msgCtx.getProperty(Constants.Configuration.CONTENT_TYPE);
+                String contentType = ((String) msgCtx.getProperty(Constants.Configuration.CONTENT_TYPE)).split(";")[0];
                 if (contentType.equals(XML_CONTENT_TYPE)) {
-                    if (maxMessageSize > 0) {
+                    if (maxMessageSize > -1) {
                         FixedByteArrayOutputStream fbaos = new FixedByteArrayOutputStream(maxMessageSize);
                         try {
                             MessageHelper.cloneSOAPEnvelope(synCtx.getEnvelope()).serialize(fbaos);
@@ -419,13 +414,9 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
                     } catch (IOException e) {
                         handleException("Error occurred while closing the FixedByteArrayOutputStream ", e, synCtx);
                     }
-                    if (response.getTimeout() > 0) {
-                        response.setExpireTimeMillis(System.currentTimeMillis() + response.getTimeout());
-                    }
-
                 } else if (contentType.equals(JSON_CONTENT_TYPE)) {
                     byte[] responsePayload = JsonUtil.jsonPayloadToByteArray(msgCtx);
-                    if (maxMessageSize > 0) {
+                    if (maxMessageSize > -1) {
                         if (responsePayload.length > maxMessageSize) {
                             synLog.traceOrDebug(
                                     "Message size exceeds the upper bound for caching, request will not be cached");
@@ -446,8 +437,14 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
                     response.setResponsePayload(responsePayload);
                     response.setJson(true);
                 }
+                if (response.getTimeout() > 0) {
+                    response.setExpireTimeMillis(System.currentTimeMillis() + response.getTimeout() * 1000);
+                }
 
                 if (msgCtx.isDoingREST()) {
+                    Map<String, String> headers =
+                            (Map<String, String>) msgCtx.getProperty(
+                                    org.apache.axis2.context.MessageContext.TRANSPORT_HEADERS);
                     String messageType = (String) msgCtx.getProperty(Constants.Configuration.MESSAGE_TYPE);
                     Map<String, Object> headerProperties = new HashMap<String, Object>();
                     //Individually copying All TRANSPORT_HEADERS to headerProperties Map instead putting whole
@@ -458,8 +455,9 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
                     headerProperties.put(Constants.Configuration.MESSAGE_TYPE, messageType);
                     headerProperties.put(CachingConstants.CACHE_KEY, response.getRequestHash());
                     response.setHeaderProperties(headerProperties);
+                    msgCtx.setProperty(org.apache.axis2.context.MessageContext.TRANSPORT_HEADERS, headerProperties);
                 }
-                cache.put(response.getRequestHash(), response);
+                getMediatorCache().put(response.getRequestHash(), response);
                 // Finally, we may need to replicate the changes in the cache
                 Replicator.replicate(cfgCtx);
             } else {
@@ -468,7 +466,7 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
             }
         } else {
             response.clean();
-            cache.put(response.getRequestHash(), response);
+            getMediatorCache().put(response.getRequestHash(), response);
             if (synLog.isTraceOrDebugEnabled()) {
                 synLog.traceOrDebug(
                         "Received a response status that could not be cached. Hence resetting the cache for this " +
@@ -479,6 +477,38 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
         }
 
     }
+
+    /**
+     * Creates default cache to keep mediator cache
+     *
+     * @return global cache
+     */
+    public LoadingCache<String, CachableResponse> getMediatorCache() {
+        if (cache == null) {
+            if (maxMessageSize > -1 && inMemoryCacheSize > -1) {
+                cache = CacheBuilder.newBuilder().expireAfterWrite(CachingConstants.CACHE_INVALIDATION_TIME,
+                                                                   TimeUnit.SECONDS).maximumSize(
+                        maxMessageSize * inMemoryCacheSize).build(
+                        new CacheLoader<String, CachableResponse>() {
+                            @Override
+                            public CachableResponse load(String requestHash) throws Exception {
+                                return cacheNewResponse(requestHash);
+                            }
+                        });
+            } else {
+                cache = CacheBuilder.newBuilder().expireAfterWrite(CachingConstants.CACHE_INVALIDATION_TIME,
+                                                                   TimeUnit.SECONDS).build(
+                        new CacheLoader<String, CachableResponse>() {
+                            @Override
+                            public CachableResponse load(String requestHash) throws Exception {
+                                return cacheNewResponse(requestHash);
+                            }
+                        });
+            }
+        }
+        return cache;
+    }
+
 
     public Mediator getInlineSequence(SynapseConfiguration synapseConfiguration, int i) {
         return null;

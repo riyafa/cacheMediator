@@ -110,8 +110,7 @@ public class EICacheMediatorSerializer extends AbstractMediatorSerializer {
                 cache.addChild(protocolElem);
             }
 
-
-            if (cacheMediator.getInMemoryCacheSize() != 0) {
+            if (cacheMediator.getInMemoryCacheSize() > -1) {
                 OMElement implElem = fac.createOMElement("implementation", synNS);
                 implElem.addAttribute(fac.createOMAttribute("maxMessagesInCache", nullNS,
                                                             Integer.toString(cacheMediator.getInMemoryCacheSize())));

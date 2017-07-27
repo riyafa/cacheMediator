@@ -19,16 +19,6 @@ public class CachingConstants {
     public static final String HTTP_METHOD_GET = "GET";
 
     /**
-     * The POST method value
-     */
-    public static final String HTTP_METHOD_POST = "POST";
-
-    /**
-     * Default cache size (in-memory)
-     */
-    public static final int DEFAULT_CACHE_SIZE = 1000;
-
-    /**
      * QName of the cache mediator which will be used by the module
      */
     public static final QName CACHE_Q = new QName(XMLConfigConstants.SYNAPSE_NAMESPACE,
@@ -42,7 +32,7 @@ public class CachingConstants {
     /**
      * This holds the default timeout of the mediator cache
      */
-    public static final long DEFAULT_TIMEOUT = 5000L;
+    public static final long DEFAULT_TIMEOUT = 5000;
 
     /**
      * The HTTP protocol
@@ -65,4 +55,11 @@ public class CachingConstants {
     public static final String CACHED_OBJECT = "CachableResponse";
 
     public static final String CACHE_KEY = "cacheKey";
+
+    public static final String EXCLUDE_ALL_VAL = "exclude-all";
+
+    /**
+     * Default cache invalidation time
+     */
+    public static final Integer CACHE_INVALIDATION_TIME =  24 * 3600;
 }
