@@ -30,6 +30,7 @@ import org.apache.synapse.debug.constructs.EnclosedInlinedSequence;
 import org.apache.synapse.mediators.AbstractMediator;
 import org.apache.synapse.mediators.base.SequenceMediator;
 import org.apache.synapse.transport.nhttp.NhttpConstants;
+import org.apache.synapse.transport.passthru.PassThroughConstants;
 import org.apache.synapse.util.FixedByteArrayOutputStream;
 import org.apache.synapse.util.MessageHelper;
 
@@ -50,12 +51,15 @@ import javax.xml.stream.XMLStreamException;
  */
 public class EICacheMediator extends AbstractMediator implements ManagedLifecycle, EnclosedInlinedSequence {
 
+
+    /**
+     * The value of json content type as it appears in HTTP Content-Type header
+     */
     private final static String JSON_CONTENT_TYPE = "application/json";
-    private final static String XML_CONTENT_TYPE = "application/xml";
     /**
      * Cache configuration ID.
      */
-    private String id = null;
+    private String id = "";
 
     /**
      * The time duration for which the cache is kept.
@@ -67,11 +71,6 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
      * (to cache the response).
      */
     private boolean collector = false;
-
-    /**
-     * The maximum size of the messages to be cached. This is specified in bytes.
-     */
-    private int maxMessageSize = -1;
 
     /**
      * The SequenceMediator to the onCacheHit sequence to be executed when an incoming message is identified as an
@@ -91,11 +90,6 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
     private boolean continueExecution = false;
 
     /**
-     * The protocol type used in caching
-     */
-    private String protocolType = CachingConstants.HTTP_PROTOCOL_TYPE;
-
-    /**
      * The http method type that needs to be cached
      */
     private String[] hTTPMethodsToCache = {CachingConstants.HTTP_METHOD_GET};
@@ -104,11 +98,6 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
      * The headers to exclude when caching
      */
     private String[] headersToExcludeInHash = {""};
-
-    /**
-     * This is used to define the logic used by the mediator to evaluate the hash values of incoming messages.
-     */
-    private String responseCodes = CachingConstants.RESPONSE_CODE;
 
     /**
      * This is used to define the logic used by the mediator to evaluate the hash values of incoming messages.
@@ -133,11 +122,10 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
 
 
     /**
-     * This holds whether the global cache already initialized or not.
+     * A store that stores values that are common to both the collector and finder
      */
-    private static AtomicBoolean mediatorCacheInit = new AtomicBoolean(false);
+    private CacheStore cacheStore;
 
-    private LoadingCache<String, CachableResponse> cache = null;
 
     public void init(SynapseEnvironment se) {
         if (onCacheHitSequence != null) {
@@ -149,6 +137,7 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
         if (onCacheHitSequence != null) {
             onCacheHitSequence.destroy();
         }
+        CacheManager.clean();
     }
 
     public boolean mediate(MessageContext synCtx) {
@@ -206,7 +195,8 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
         String requestHash = null;
         try {
             requestHash = digestGenerator.getDigest(((Axis2MessageContext) synCtx).getAxis2MessageContext(),
-                                                    CachingConstants.HTTP_PROTOCOL_TYPE.equals(protocolType) &&
+                                                    CachingConstants.HTTP_PROTOCOL_TYPE
+                                                            .equals(cacheStore.getProtocolType()) &&
                                                             msgCtx.isDoingREST() &&
                                                             getHTTPMethodsToCache().length == 1 &&
                                                             getHTTPMethodsToCache()[0]
@@ -238,7 +228,7 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
                     byte[] payload = cachedResponse.getResponsePayload();
                     if (cachedResponse.isJson()) {
                         OMElement response = JsonUtil.getNewJsonPayload(msgCtx, payload, 0,
-                                                   payload.length, false, false);
+                                                                        payload.length, false, false);
                         if (msgCtx.getEnvelope().getBody().getFirstElement() != null) {
                             msgCtx.getEnvelope().getBody().getFirstElement().detach();
                         }
@@ -286,6 +276,10 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
                     handleException("Error creating response OM from cache : " + id, synCtx);
                 }
 
+                if (CachingConstants.HTTP_PROTOCOL_TYPE.equals(cacheStore.getProtocolType())) {
+                    msgCtx.setProperty(NhttpConstants.HTTP_SC, Integer.parseInt(cachedResponse.getStatusCode()));
+                    msgCtx.setProperty(PassThroughConstants.HTTP_SC_DESC, cachedResponse.getStatusReason());
+                }
                 if (msgCtx.isDoingREST()) {
 
                     if ((headerProperties = cachedResponse.getHeaderProperties()) != null) {
@@ -326,11 +320,13 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
                     }
                     // send the response back if there is not onCacheHit is specified
                     synCtx.setTo(null);
-                    Axis2Sender.sendBack(synCtx);//Todo
 
                 }
-                if (!continueExecution) {//Todo
+                if (!continueExecution) {
+                    Axis2Sender.sendBack(synCtx);
                     return false;
+                } else {
+
                 }
             } else {
                 cachedResponse.reincarnate(timeout);
@@ -357,14 +353,18 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
         CachableResponse response = (CachableResponse) operationContext.getProperty(CachingConstants.CACHED_OBJECT);
 
         boolean toCache = false;
-        if (CachingConstants.HTTP_PROTOCOL_TYPE.equals(protocolType)) {
+        if (CachingConstants.HTTP_PROTOCOL_TYPE.equals(cacheStore.getProtocolType())) {
             String statusCode = msgCtx.getProperty(NhttpConstants.HTTP_SC).toString();
             // Create a Pattern object
-            Pattern r = Pattern.compile(responseCodes);
+            Pattern r = Pattern.compile(cacheStore.getResponseCodes());
             // Now create matcher object.
             Matcher m = r.matcher(statusCode);
             if (m.matches()) {
                 toCache = true;
+                if (response != null) {
+                    response.setStatusCode(statusCode);
+                    response.setStatusReason(msgCtx.getProperty(PassThroughConstants.HTTP_SC_DESC).toString());
+                }
             } else {
                 toCache = false;
             }
@@ -375,9 +375,23 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
         if (toCache) {
             if (response != null) {
                 String contentType = ((String) msgCtx.getProperty(Constants.Configuration.CONTENT_TYPE)).split(";")[0];
-                if (contentType.equals(XML_CONTENT_TYPE)) {
-                    if (maxMessageSize > -1) {
-                        FixedByteArrayOutputStream fbaos = new FixedByteArrayOutputStream(maxMessageSize);
+
+                if (contentType.equals(JSON_CONTENT_TYPE)) {
+                    byte[] responsePayload = JsonUtil.jsonPayloadToByteArray(msgCtx);
+                    if (cacheStore.getMaxMessageSize() > -1) {
+                        if (responsePayload.length > cacheStore.getMaxMessageSize()) {
+                            synLog.traceOrDebug(
+                                    "Message size exceeds the upper bound for caching, request will not be cached");
+                            return;
+                        }
+                    }
+
+                    response.setResponsePayload(responsePayload);
+                    response.setJson(true);
+                } else {
+                    if (cacheStore.getMaxMessageSize() > -1) {
+                        FixedByteArrayOutputStream fbaos = new FixedByteArrayOutputStream(
+                                cacheStore.getMaxMessageSize());
                         try {
                             MessageHelper.cloneSOAPEnvelope(synCtx.getEnvelope()).serialize(fbaos);
                         } catch (XMLStreamException e) {
@@ -395,16 +409,6 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
                             }
                         }
                     }
-
-                    if (synLog.isTraceOrDebugEnabled()) {
-                        synLog.traceOrDebug("Storing the response message into the cache with ID : "
-                                                    + id + " for request hash : " + response.getRequestHash());
-                    }
-                    if (synLog.isTraceOrDebugEnabled()) {
-                        synLog.traceOrDebug(
-                                "Storing the response for the message with ID : " + synCtx.getMessageID() + " " +
-                                        "with request hash ID : " + response.getRequestHash() + " in the cache");
-                    }
                     try (ByteArrayOutputStream outStream = new ByteArrayOutputStream()) {
                         synCtx.getEnvelope().serialize(outStream);
                         response.setResponsePayload(outStream.toByteArray());
@@ -414,28 +418,16 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
                     } catch (IOException e) {
                         handleException("Error occurred while closing the FixedByteArrayOutputStream ", e, synCtx);
                     }
-                } else if (contentType.equals(JSON_CONTENT_TYPE)) {
-                    byte[] responsePayload = JsonUtil.jsonPayloadToByteArray(msgCtx);
-                    if (maxMessageSize > -1) {
-                        if (responsePayload.length > maxMessageSize) {
-                            synLog.traceOrDebug(
-                                    "Message size exceeds the upper bound for caching, request will not be cached");
-                            return;
-                        }
-                    }
+                }
 
-                    if (synLog.isTraceOrDebugEnabled()) {
-                        synLog.traceOrDebug("Storing the response message into the cache with ID : "
-                                                    + id + " for request hash : " + response.getRequestHash());
-                    }
-                    if (synLog.isTraceOrDebugEnabled()) {
-                        synLog.traceOrDebug(
-                                "Storing the response for the message with ID : " + synCtx.getMessageID() + " " +
-                                        "with request hash ID : " + response.getRequestHash() + " in the cache");
-                    }
-
-                    response.setResponsePayload(responsePayload);
-                    response.setJson(true);
+                if (synLog.isTraceOrDebugEnabled()) {
+                    synLog.traceOrDebug("Storing the response message into the cache with ID : "
+                                                + id + " for request hash : " + response.getRequestHash());
+                }
+                if (synLog.isTraceOrDebugEnabled()) {
+                    synLog.traceOrDebug(
+                            "Storing the response for the message with ID : " + synCtx.getMessageID() + " " +
+                                    "with request hash ID : " + response.getRequestHash() + " in the cache");
                 }
                 if (response.getTimeout() > 0) {
                     response.setExpireTimeMillis(System.currentTimeMillis() + response.getTimeout() * 1000);
@@ -484,12 +476,12 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
      * @return global cache
      */
     public LoadingCache<String, CachableResponse> getMediatorCache() {
+        LoadingCache<String, CachableResponse> cache = CacheManager.get(id);
         if (cache == null) {
-            if (maxMessageSize > -1 && inMemoryCacheSize > -1) {
+            if (inMemoryCacheSize > -1) {
                 cache = CacheBuilder.newBuilder().expireAfterWrite(CachingConstants.CACHE_INVALIDATION_TIME,
-                                                                   TimeUnit.SECONDS).maximumSize(
-                        maxMessageSize * inMemoryCacheSize).build(
-                        new CacheLoader<String, CachableResponse>() {
+                                                                   TimeUnit.SECONDS).maximumSize(inMemoryCacheSize)
+                        .build(new CacheLoader<String, CachableResponse>() {
                             @Override
                             public CachableResponse load(String requestHash) throws Exception {
                                 return cacheNewResponse(requestHash);
@@ -505,6 +497,7 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
                             }
                         });
             }
+            CacheManager.put(id, cache);
         }
         return cache;
     }
@@ -584,24 +577,6 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
      */
     public void setCollector(boolean collector) {
         this.collector = collector;
-    }
-
-    /**
-     * This method gives the maximum size of the messages to be cached in bytes.
-     *
-     * @return maximum size of the messages to be cached in bytes.
-     */
-    public int getMaxMessageSize() {
-        return maxMessageSize;
-    }
-
-    /**
-     * This method sets the maximum size of the messages to be cached in bytes.
-     *
-     * @param maxMessageSize maximum size of the messages to be set in bytes.
-     */
-    public void setMaxMessageSize(int maxMessageSize) {
-        this.maxMessageSize = maxMessageSize;
     }
 
     /**
@@ -713,29 +688,11 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
     }
 
 
-    public String getProtocolType() {
-        return protocolType;
+    public CacheStore getCacheStore() {
+        return cacheStore;
     }
 
-    /**
-     * This method sets protocolType of the messages.
-     *
-     * @param protocolType protocol type of the messages.
-     */
-    public void setProtocolType(String protocolType) {
-        this.protocolType = protocolType;
-    }
-
-    public String getResponseCodes() {
-        return responseCodes;
-    }
-
-    /**
-     * This method sets the response codes that needs to be cached.
-     *
-     * @param responseCodes the response codes to be cached in regex form.
-     */
-    public void setResponseCodes(String responseCodes) {
-        this.responseCodes = responseCodes;
+    public void setCacheStore(CacheStore cacheStore) {
+        this.cacheStore = cacheStore;
     }
 }

@@ -70,9 +70,18 @@ public class HttpRequestHashGenerator implements DigestGenerator {
                 byte[] digest = getDigest(toAddress, MD5_DIGEST_ALGORITHM);
                 return digest != null ? getStringRepresentation(digest) : null;
             } else {
-                OMNode request = msgContext.getEnvelope().getBody();
-                if (request != null) {
-                    byte[] digest = getDigest(request, MD5_DIGEST_ALGORITHM);
+                OMNode body = msgContext.getEnvelope().getBody();
+                String toAddress = null;
+                if (msgContext.getTo() != null) {
+                    toAddress = msgContext.getTo().getAddress();
+                }
+                if (body != null) {
+                    byte[] digest;
+                    if (toAddress != null) {
+                        digest = getDigest(body, toAddress, null, MD5_DIGEST_ALGORITHM);
+                    } else {
+                        digest = getDigest(body, MD5_DIGEST_ALGORITHM);
+                    }
                     return digest != null ? getStringRepresentation(digest) : null;
                 } else {
                     return null;
@@ -211,7 +220,7 @@ public class HttpRequestHashGenerator implements DigestGenerator {
     /**
      * Gets the String representation of the byte array
      *
-     * @param array     - byte[] of which the String representation is required
+     * @param array - byte[] of which the String representation is required
      * @return the String representation of the byte[]
      */
     public String getStringRepresentation(byte[] array) {
@@ -231,8 +240,8 @@ public class HttpRequestHashGenerator implements DigestGenerator {
     /**
      * This is an overloaded method for the digest generation for OMElement
      *
-     * @param element           - OMElement to be subjected to the key generation
-     * @param digestAlgorithm   - digest algorithm as a String
+     * @param element         - OMElement to be subjected to the key generation
+     * @param digestAlgorithm - digest algorithm as a String
      * @return byte[] representing the calculated digest over the provided element
      * @throws CachingException if there is an io error or the specified algorithm is incorrect
      */
@@ -252,11 +261,14 @@ public class HttpRequestHashGenerator implements DigestGenerator {
             dos.write((byte) 0);
 
             dos.write(toAddress.getBytes("UnicodeBigUnmarked"));
-            Iterator itr = headers.keySet().iterator();
-            while (itr.hasNext()) {
-                String key = (String) itr.next();
-                String value = headers.get(key);
-                dos.write(getDigest(key, value, digestAlgorithm));
+            Iterator itr;
+            if (headers != null) {
+                itr = headers.keySet().iterator();
+                while (itr.hasNext()) {
+                    String key = (String) itr.next();
+                    String value = headers.get(key);
+                    dos.write(getDigest(key, value, digestAlgorithm));
+                }
             }
 
             Collection attrs = getAttributesWithoutNS(element);
@@ -264,8 +276,9 @@ public class HttpRequestHashGenerator implements DigestGenerator {
 
 
             itr = attrs.iterator();
-            while (itr.hasNext())
+            while (itr.hasNext()) {
                 dos.write(getDigest((OMAttribute) itr.next(), digestAlgorithm));
+            }
             OMNode node = element.getFirstOMChild();
 
             // adjoining Texts are merged,
@@ -302,11 +315,11 @@ public class HttpRequestHashGenerator implements DigestGenerator {
     /**
      * This method is an overloaded method for the digest generation for OMText
      *
-     * @param text              - OMText to be subjected to the key generation
-     * @param digestAlgorithm   - digest algorithm as a String
+     * @param text            - OMText to be subjected to the key generation
+     * @param digestAlgorithm - digest algorithm as a String
      * @return byte[] representing the calculated digest over the provided text
-     * @throws CachingException if the specified algorithm is incorrect or the encoding
-     *                          is not supported by the processor
+     * @throws CachingException if the specified algorithm is incorrect or the encoding is not supported by the
+     *                          processor
      */
     public byte[] getDigest(OMText text, String digestAlgorithm) throws CachingException {
 
@@ -337,11 +350,11 @@ public class HttpRequestHashGenerator implements DigestGenerator {
     /**
      * This method is an overloaded method for the digest generation for OMProcessingInstruction
      *
-     * @param pi                - OMProcessingInstruction to be subjected to the key generation
-     * @param digestAlgorithm   - digest algorithm as a String
+     * @param pi              - OMProcessingInstruction to be subjected to the key generation
+     * @param digestAlgorithm - digest algorithm as a String
      * @return byte[] representing the calculated digest over the provided pi
-     * @throws CachingException if the specified algorithm is incorrect or the encoding
-     *                          is not supported by the processor
+     * @throws CachingException if the specified algorithm is incorrect or the encoding is not supported by the
+     *                          processor
      */
     public byte[] getDigest(OMProcessingInstruction pi, String digestAlgorithm)
             throws CachingException {
@@ -377,11 +390,11 @@ public class HttpRequestHashGenerator implements DigestGenerator {
     /**
      * This is an overloaded method for the digest generation for OMAttribute
      *
-     * @param attribute         - OMAttribute to be subjected to the key generation
-     * @param digestAlgorithm   - digest algorithm as a String
+     * @param attribute       - OMAttribute to be subjected to the key generation
+     * @param digestAlgorithm - digest algorithm as a String
      * @return byte[] representing the calculated digest over the provided attribute
-     * @throws CachingException if the specified algorithm is incorrect or the encoding
-     *                          is not supported by the processor
+     * @throws CachingException if the specified algorithm is incorrect or the encoding is not supported by the
+     *                          processor
      */
     public byte[] getDigest(OMAttribute attribute, String digestAlgorithm) throws CachingException {
 
@@ -418,10 +431,10 @@ public class HttpRequestHashGenerator implements DigestGenerator {
     }
 
     /**
-     * This is an overloaded method for getting the expanded name as namespaceURI followed by
-     * the local name for OMElement
+     * This is an overloaded method for getting the expanded name as namespaceURI followed by the local name for
+     * OMElement
      *
-     * @param element   - OMElement of which the expanded name is retrieved
+     * @param element - OMElement of which the expanded name is retrieved
      * @return expanded name of OMElement as an String in the form {ns-uri:local-name}
      */
     public String getExpandedName(OMElement element) {
@@ -434,10 +447,10 @@ public class HttpRequestHashGenerator implements DigestGenerator {
     }
 
     /**
-     * This is an overloaded method for getting the expanded name as namespaceURI followed by
-     * the local name for OMAttribute
+     * This is an overloaded method for getting the expanded name as namespaceURI followed by the local name for
+     * OMAttribute
      *
-     * @param attribute     - OMAttribute of which the expanded name is retrieved
+     * @param attribute - OMAttribute of which the expanded name is retrieved
      * @return expanded name of the OMAttribute as an String in the form {ns-uri:local-name}
      */
     public String getExpandedName(OMAttribute attribute) {
@@ -450,10 +463,10 @@ public class HttpRequestHashGenerator implements DigestGenerator {
     }
 
     /**
-     * Gets the collection of attributes which are none namespace declarations for an OMElement
-     * sorted according to the expanded names of the attributes
+     * Gets the collection of attributes which are none namespace declarations for an OMElement sorted according to the
+     * expanded names of the attributes
      *
-     * @param element   - OMElement of which the none ns declaration attributes to be retrieved
+     * @param element - OMElement of which the none ns declaration attributes to be retrieved
      * @return the collection of attributes which are none namespace declarations
      */
     public Collection getAttributesWithoutNS(OMElement element) {

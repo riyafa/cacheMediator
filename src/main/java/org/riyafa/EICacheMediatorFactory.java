@@ -99,6 +99,8 @@ public class EICacheMediatorFactory extends AbstractMediatorFactory {
      */
     private static final QName ATT_SIZE = new QName("maxSize");
 
+    private CacheStore cacheStore;
+
 
     protected Mediator createSpecificMediator(OMElement elem, Properties properties) {
         if (!CachingConstants.CACHE_Q.equals(elem.getQName())) {
@@ -108,8 +110,12 @@ public class EICacheMediatorFactory extends AbstractMediatorFactory {
 
         EICacheMediator cache = new EICacheMediator();
         OMAttribute idAttr = elem.getAttribute(ATT_ID);
-        if (idAttr != null && idAttr.getAttributeValue() != null) {
+        String id;
+        if (idAttr != null && (id = idAttr.getAttributeValue()) != null) {
+            cacheStore = CacheStoreManager.get(id);
             cache.setId(idAttr.getAttributeValue());
+        } else {
+            cacheStore = CacheStoreManager.get("");
         }
 
         OMAttribute collectorAttr = elem.getAttribute(ATT_COLLECTOR);
@@ -129,7 +135,7 @@ public class EICacheMediatorFactory extends AbstractMediatorFactory {
 
             OMAttribute maxMessageSizeAttr = elem.getAttribute(ATT_MAX_MSG_SIZE);
             if (maxMessageSizeAttr != null && maxMessageSizeAttr.getAttributeValue() != null) {
-                cache.setMaxMessageSize(Integer.parseInt(maxMessageSizeAttr.getAttributeValue()));
+                cacheStore.setMaxMessageSize(Integer.parseInt(maxMessageSizeAttr.getAttributeValue()));
             }
 
             for (Iterator itr = elem.getChildrenWithName(PROTOCOL_Q); itr.hasNext(); ) {
@@ -139,7 +145,7 @@ public class EICacheMediatorFactory extends AbstractMediatorFactory {
                 if (typeAttr != null &&
                         typeAttr.getAttributeValue() != null) {
                     String protocolType = typeAttr.getAttributeValue().toUpperCase();
-                    cache.setProtocolType(protocolType);
+                    cacheStore.setProtocolType(protocolType);
                     if (CachingConstants.HTTP_PROTOCOL_TYPE.equals(protocolType)) {
                         OMElement methodElem = protocolElem.getFirstChildWithName(HTTP_METHODS_TO_CACHE_Q);
                         if (methodElem != null) {
@@ -173,7 +179,7 @@ public class EICacheMediatorFactory extends AbstractMediatorFactory {
                         if (responseElem != null) {
                             String responses = responseElem.getText();
                             if (!"".equals(responses) && responses != null) {
-                                cache.setResponseCodes(responses);
+                                cacheStore.setResponseCodes(responses);
                             }
                         }
 
@@ -238,6 +244,7 @@ public class EICacheMediatorFactory extends AbstractMediatorFactory {
                 }
             }
         }
+        cache.setCacheStore(cacheStore);
         return cache;
     }
 

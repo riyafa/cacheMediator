@@ -12,6 +12,8 @@ import java.util.List;
  * Created by riyafa on 7/10/17.
  */
 public class EICacheMediatorSerializer extends AbstractMediatorSerializer {
+    private CacheStore cacheStore;
+
     protected OMElement serializeSpecificMediator(Mediator mediator) {
         if (!(mediator instanceof EICacheMediator)) {
             handleException("Unsupported mediator passed in for serialization : " + mediator.getType());
@@ -22,7 +24,10 @@ public class EICacheMediatorSerializer extends AbstractMediatorSerializer {
         saveTracingState(cache, mediator);
 
         if (cacheMediator.getId() != null) {
+            cacheStore = CacheStoreManager.get(cacheMediator.getId());
             cache.addAttribute(fac.createOMAttribute("id", nullNS, cacheMediator.getId()));
+        } else {
+            cacheStore = CacheStoreManager.get("");
         }
 
         if (cacheMediator.isCollector()) {
@@ -35,10 +40,10 @@ public class EICacheMediatorSerializer extends AbstractMediatorSerializer {
                         fac.createOMAttribute("timeout", nullNS, Long.toString(cacheMediator.getTimeout())));
             }
 
-            if (cacheMediator.getMaxMessageSize() != 0) {
+            if (cacheStore.getMaxMessageSize() != 0) {
                 cache.addAttribute(
                         fac.createOMAttribute("maxMessageSize", nullNS,
-                                              Integer.toString(cacheMediator.getMaxMessageSize())));
+                                              Integer.toString(cacheStore.getMaxMessageSize())));
             }
 
             OMElement onCacheHit = null;
@@ -61,9 +66,9 @@ public class EICacheMediatorSerializer extends AbstractMediatorSerializer {
                 }
             }
 
-            if (CachingConstants.HTTP_PROTOCOL_TYPE.equals(cacheMediator.getProtocolType())) {
+            if (CachingConstants.HTTP_PROTOCOL_TYPE.equals(cacheStore.getProtocolType())) {
                 OMElement protocolElem = fac.createOMElement("protocol", synNS);
-                protocolElem.addAttribute(fac.createOMAttribute("type", nullNS, cacheMediator.getProtocolType()));
+                protocolElem.addAttribute(fac.createOMAttribute("type", nullNS, cacheStore.getProtocolType()));
 
                 String[] methods = cacheMediator.getHTTPMethodsToCache();
                 if (!(methods.length == 0 && "".equals(methods[0]))) {
@@ -95,7 +100,7 @@ public class EICacheMediatorSerializer extends AbstractMediatorSerializer {
                     protocolElem.addChild(headerElem);
                 }
 
-                String responseCodes = cacheMediator.getResponseCodes();
+                String responseCodes = cacheStore.getResponseCodes();
                 OMElement responseCodesElem = fac.createOMElement("responseCodes", synNS);
                 responseCodesElem.setText(responseCodes);
                 protocolElem.addChild(responseCodesElem);
@@ -112,7 +117,7 @@ public class EICacheMediatorSerializer extends AbstractMediatorSerializer {
 
             if (cacheMediator.getInMemoryCacheSize() > -1) {
                 OMElement implElem = fac.createOMElement("implementation", synNS);
-                implElem.addAttribute(fac.createOMAttribute("maxMessagesInCache", nullNS,
+                implElem.addAttribute(fac.createOMAttribute("maxSize", nullNS,
                                                             Integer.toString(cacheMediator.getInMemoryCacheSize())));
                 cache.addChild(implElem);
             }

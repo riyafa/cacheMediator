@@ -43,6 +43,8 @@ public class CachableResponse implements Serializable {
      */
     private Map<String, Object> headerProperties;
 
+    private String statusCode;
+    private String statusReason;
     private boolean json;
 
     /**
@@ -174,5 +176,21 @@ public class CachableResponse implements Serializable {
 
     public void setJson(boolean json) {
         this.json = json;
+    }
+
+    public String getStatusCode() {
+        return statusCode;
+    }
+
+    public void setStatusCode(String statusCode) {
+        this.statusCode = statusCode;
+    }
+
+    public String getStatusReason() {
+        return statusReason;
+    }
+
+    public void setStatusReason(String statusReason) {
+        this.statusReason = statusReason;
     }
 }
