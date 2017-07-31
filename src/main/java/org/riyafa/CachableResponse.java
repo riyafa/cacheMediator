@@ -1,8 +1,23 @@
+/*
+ * Copyright (c) 2017, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
+ *
+ * WSO2 Inc. licenses this file to you under the Apache License,
+ * Version 2.0 (the "License"); you may not use this file except
+ * in compliance with the License.
+ * You may obtain a copy of the License at
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
 package org.riyafa;
 
 import java.io.Serializable;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * This object holds the cached response and the related properties of the cache per request and will be stored in to
@@ -43,8 +58,19 @@ public class CachableResponse implements Serializable {
      */
     private Map<String, Object> headerProperties;
 
+    /**
+     * The HTTP status code number of the response
+     */
     private String statusCode;
+
+    /**
+     * The HTTP response's Reason- Phrase that is sent by the backend.
+     */
     private String statusReason;
+
+    /**
+     * States whether response is json or not
+     */
     private boolean json;
 
     /**
@@ -75,15 +101,19 @@ public class CachableResponse implements Serializable {
     }
 
 
+    /**
+     * Sets the responsePayload and the headerProperties to null
+     */
     public void clean() {
         responsePayload = null;
         headerProperties = null;
     }
 
+
     /**
-     * This method gives the cached response envelope as a String
+     * This method gives the cached response payload as a byte array
      *
-     * @return String representing the cached response payload
+     * @return byte[] representing the cached response payload
      */
     public byte[] getResponsePayload() {
         return responsePayload;
@@ -92,7 +122,7 @@ public class CachableResponse implements Serializable {
     /**
      * This method sets the response payload to the cache as a byte array
      *
-     * @param responsePayload - response payload to be stored in to the cache as a String
+     * @param responsePayload - response payload to be stored in to the cache as a byte array
      */
     public void setResponsePayload(byte[] responsePayload) {
         this.responsePayload = responsePayload;
@@ -114,15 +144,6 @@ public class CachableResponse implements Serializable {
      */
     public void setRequestHash(String requestHash) {
         this.requestHash = requestHash;
-    }
-
-    /**
-     * This method gives the expireTimeMillis in the standard java system time format
-     *
-     * @return long refresh time in the standard java system time format
-     */
-    public long getExpireTimeMillis() {
-        return expireTimeMillis;
     }
 
     /**
@@ -170,26 +191,50 @@ public class CachableResponse implements Serializable {
         this.headerProperties = headerProperties;
     }
 
+    /**
+     * @return whether the response is json or not
+     */
     public boolean isJson() {
         return json;
     }
 
+    /**
+     * Sets whether the response content-type is json or not
+     *
+     * @param json whether the response content-type is json or not
+     */
     public void setJson(boolean json) {
         this.json = json;
     }
 
+    /**
+     * @return HTTP status code number of the response
+     */
     public String getStatusCode() {
         return statusCode;
     }
 
+    /**
+     * Sets the HTTP status code number of the response
+     *
+     * @param statusCode HTTP status code number of the response
+     */
     public void setStatusCode(String statusCode) {
         this.statusCode = statusCode;
     }
 
+    /**
+     * @return HTTP response's Reason- Phrase that is sent by the backend.
+     */
     public String getStatusReason() {
         return statusReason;
     }
 
+    /**
+     * Sets the HTTP response's Reason-Phrase that is sent by the backend.
+     *
+     * @param statusReason HTTP response's Reason-Phrase that is sent by the backend.
+     */
     public void setStatusReason(String statusReason) {
         this.statusReason = statusReason;
     }

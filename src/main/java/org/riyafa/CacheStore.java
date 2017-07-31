@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2017, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
+ *
+ * WSO2 Inc. licenses this file to you under the Apache License,
+ * Version 2.0 (the "License"); you may not use this file except
+ * in compliance with the License.
+ * You may obtain a copy of the License at
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
 package org.riyafa;
 
 public class CacheStore {
@@ -7,7 +23,7 @@ public class CacheStore {
     private int maxMessageSize = -1;
 
     /**
-     * This is used to define the logic used by the mediator to evaluate the hash values of incoming messages.
+     * The regex expression of the HTTP response code to be cached
      */
     private String responseCodes = CachingConstants.RESPONSE_CODE;
 
@@ -16,6 +32,9 @@ public class CacheStore {
      */
     private String protocolType = CachingConstants.HTTP_PROTOCOL_TYPE;
 
+    /**
+     * @return the protocol type of the messages
+     */
     public String getProtocolType() {
         return protocolType;
     }
@@ -29,6 +48,9 @@ public class CacheStore {
         this.protocolType = protocolType;
     }
 
+    /**
+     * @return The regex expression of the HTTP response code of the messages to be cached
+     */
     public String getResponseCodes() {
         return responseCodes;
     }

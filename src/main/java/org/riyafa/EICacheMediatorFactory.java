@@ -1,9 +1,23 @@
+/*
+ * Copyright (c) 2017, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
+ *
+ * WSO2 Inc. licenses this file to you under the Apache License,
+ * Version 2.0 (the "License"); you may not use this file except
+ * in compliance with the License.
+ * You may obtain a copy of the License at
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
 package org.riyafa;
 
 import org.apache.axiom.om.OMAttribute;
 import org.apache.axiom.om.OMElement;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.apache.synapse.Mediator;
 import org.apache.synapse.config.xml.AbstractMediatorFactory;
 import org.apache.synapse.config.xml.SequenceMediatorFactory;
@@ -13,15 +27,7 @@ import java.util.Iterator;
 import java.util.Properties;
 import javax.xml.namespace.QName;
 
-/**
- * Created by riyafa on 7/10/17.
- */
 public class EICacheMediatorFactory extends AbstractMediatorFactory {
-
-    /**
-     * Log object to use when logging is required in this class.
-     */
-    private static final Log log = LogFactory.getLog(EICacheMediatorFactory.class);
 
     /**
      * QName of the ID of cache configuration
@@ -99,9 +105,15 @@ public class EICacheMediatorFactory extends AbstractMediatorFactory {
      */
     private static final QName ATT_SIZE = new QName("maxSize");
 
+    /**
+     * Stores certain parameters that are common to both Collector and Finder instances of the cache mediator
+     */
     private CacheStore cacheStore;
 
 
+    /**
+     * {@inheritDoc}
+     */
     protected Mediator createSpecificMediator(OMElement elem, Properties properties) {
         if (!CachingConstants.CACHE_Q.equals(elem.getQName())) {
             handleException(
@@ -248,6 +260,9 @@ public class EICacheMediatorFactory extends AbstractMediatorFactory {
         return cache;
     }
 
+    /**
+     * {@inheritDoc}
+     */
     public QName getTagQName() {
         return CachingConstants.CACHE_Q;
     }

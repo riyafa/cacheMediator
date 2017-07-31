@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2017, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
+ *
+ * WSO2 Inc. licenses this file to you under the Apache License,
+ * Version 2.0 (the "License"); you may not use this file except
+ * in compliance with the License.
+ * You may obtain a copy of the License at
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
 package org.riyafa;
 
 import org.apache.axiom.om.OMAttribute;
@@ -21,21 +37,29 @@ import java.util.Map;
 import java.util.SortedMap;
 import java.util.TreeMap;
 
-/**
- * Created by riyafa on 7/13/17.
- */
 public class HttpRequestHashGenerator implements DigestGenerator {
+    /**
+     * Log object to use when logging is required in this class.
+     */
     private static final Log log = LogFactory.getLog(HttpRequestHashGenerator.class);
+    /**
+     * String representing the MD5 digest algorithm
+     */
     public static final String MD5_DIGEST_ALGORITHM = "MD5";
 
+    /**
+     * {@inheritDoc}
+     */
     public String getDigest(MessageContext msgContext, boolean isGet, String... headers) throws CachingException {
         boolean excludeAllHeaders = CachingConstants.EXCLUDE_ALL_VAL.equals(headers[0]);
+        //If some or all headers need to be included in the hash
         if (!excludeAllHeaders) {
             Map<String, String> transportHeaders =
                     (Map<String, String>) msgContext.getProperty(MessageContext.TRANSPORT_HEADERS);
             for (String header : headers) {
                 transportHeaders.remove(header);
             }
+            //If the HTTP method is GET do not hash the payload. Hash only url and headers.
             if (isGet) {
                 if (msgContext.getTo() == null) {
                     return null;
@@ -43,7 +67,7 @@ public class HttpRequestHashGenerator implements DigestGenerator {
                 String toAddress = msgContext.getTo().getAddress();
                 byte[] digest = getDigest(toAddress, transportHeaders, MD5_DIGEST_ALGORITHM);
                 return digest != null ? getStringRepresentation(digest) : null;
-            } else {
+            } else {//If the HTTP method is POST hash the payload along with the url and the headers
                 OMNode body = msgContext.getEnvelope().getBody();
                 String toAddress = null;
                 if (msgContext.getTo() != null) {
@@ -61,7 +85,7 @@ public class HttpRequestHashGenerator implements DigestGenerator {
                     return null;
                 }
             }
-        } else {
+        } else { //Do not hash the headers
             if (isGet) {
                 if (msgContext.getTo() == null) {
                     return null;
@@ -91,6 +115,14 @@ public class HttpRequestHashGenerator implements DigestGenerator {
     }
 
 
+    /**
+     * For the digest generation using the to address
+     *
+     * @param toAddress       Request To address to be subjected to the key generation
+     * @param digestAlgorithm digest algorithm as a String
+     * @return byte[] representing the calculated digest over the toAddress
+     * @throws CachingException if there is an error in generating the digest
+     */
     public byte[] getDigest(String toAddress, String digestAlgorithm) throws CachingException {
 
         byte[] digest = new byte[0];
@@ -114,7 +146,7 @@ public class HttpRequestHashGenerator implements DigestGenerator {
      *
      * @param node            - OMNode to be subjected to the key generation
      * @param digestAlgorithm - digest algorithm as a String
-     * @return byte[] representing the calculated digest over the provided node
+     * @return byte[] c node
      * @throws CachingException if there is an error in generating the digest
      */
     public byte[] getDigest(OMNode node, String digestAlgorithm) throws CachingException {

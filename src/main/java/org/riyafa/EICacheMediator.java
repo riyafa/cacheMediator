@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2017, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
+ *
+ * WSO2 Inc. licenses this file to you under the Apache License,
+ * Version 2.0 (the "License"); you may not use this file except
+ * in compliance with the License.
+ * You may obtain a copy of the License at
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
 package org.riyafa;
 
 import com.google.common.cache.CacheBuilder;
@@ -126,13 +142,18 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
      */
     private CacheStore cacheStore;
 
-
+    /**
+     * {@inheritDoc}
+     */
     public void init(SynapseEnvironment se) {
         if (onCacheHitSequence != null) {
             onCacheHitSequence.init(se);
         }
     }
 
+    /**
+     * {@inheritDoc}
+     */
     public void destroy() {
         if (onCacheHitSequence != null) {
             onCacheHitSequence.destroy();
@@ -140,6 +161,9 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
         CacheManager.clean();
     }
 
+    /**
+     * {@inheritDoc}
+     */
     public boolean mediate(MessageContext synCtx) {
         if (synCtx.getEnvironment().isDebuggerEnabled()) {
             if (super.divertMediationRoute(synCtx)) {
@@ -177,6 +201,12 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
         return result;
     }
 
+    /**
+     * Caches the CachableResponse object with currently available attributes against the requestHash in
+     * LoadingCache<String, CachableResponse>. Called in the load method of CachingBuilder
+     *
+     * @param requestHash the request hash that has already been computed
+     */
     private CachableResponse cacheNewResponse(String requestHash) {
         CachableResponse response = new CachableResponse();
         response.setRequestHash(requestHash);
@@ -184,6 +214,16 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
         return response;
     }
 
+    /**
+     * Processes a request message through the cache mediator. Generates the request hash and looks up for a hit, if
+     * found; then the specified named or anonymous sequence is executed or marks this message as a response and sends
+     * back directly to client.
+     *
+     * @param synCtx incoming request message
+     * @param synLog the Synapse log to use
+     * @return should this mediator terminate further processing?
+     * @throws ClusteringFault if there is an error in replicating the cfgCtx
+     */
     private boolean processRequestMessage(MessageContext synCtx, SynapseLog synLog)
             throws ExecutionException, ClusteringFault {
         if (collector) {
@@ -322,6 +362,7 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
                     synCtx.setTo(null);
 
                 }
+                //Todo if needed
                 if (!continueExecution) {
                     Axis2Sender.sendBack(synCtx);
                     return false;
@@ -342,6 +383,15 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
         return true;
     }
 
+    /**
+     * Process a response message through this cache mediator. This finds the Cache used, and updates it for the
+     * corresponding request hash
+     *
+     * @param synLog the Synapse log to use
+     * @param synCtx the current message (response)
+     * @param cfgCtx the abstract context in which the cache will be kept
+     * @throws ClusteringFault is there is an error in replicating the cfgCtx
+     */
     @SuppressWarnings("unchecked")
     private void processResponseMessage(MessageContext synCtx, ConfigurationContext cfgCtx, SynapseLog synLog)
             throws ClusteringFault {
@@ -502,8 +552,17 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
         return cache;
     }
 
-
-    public Mediator getInlineSequence(SynapseConfiguration synapseConfiguration, int i) {
+    /**
+     * {@inheritDoc}
+     */
+    public Mediator getInlineSequence(SynapseConfiguration synCfg, int inlinedSeqIdentifier) {
+        if (inlinedSeqIdentifier == 0) {
+            if (onCacheHitSequence != null) {
+                return onCacheHitSequence;
+            } else if (onCacheHitRef != null) {
+                return synCfg.getSequence(onCacheHitRef);
+            }
+        }
         return null;
     }
 
@@ -687,11 +746,9 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
         this.inMemoryCacheSize = inMemoryCacheSize;
     }
 
-
-    public CacheStore getCacheStore() {
-        return cacheStore;
-    }
-
+    /**
+     * Sets the store that stores values that are common to both the collector and finder
+     */
     public void setCacheStore(CacheStore cacheStore) {
         this.cacheStore = cacheStore;
     }
