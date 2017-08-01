@@ -46,7 +46,7 @@ public class CacheStoreManager {
     /**
      * Clears the CacheStoreManager
      */
-    public static void clean() {
+    static void clean() {
         cacheMap.clear();
-    }
+    }//MAKE  package private
 }

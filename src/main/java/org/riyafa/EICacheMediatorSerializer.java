@@ -28,6 +28,7 @@ import java.util.List;
  * Created by riyafa on 7/10/17.
  */
 public class EICacheMediatorSerializer extends AbstractMediatorSerializer {
+
     /**
      * Stores certain parameters that are common to both Collector and Finder instances of the cache mediator
      */
@@ -42,28 +43,28 @@ public class EICacheMediatorSerializer extends AbstractMediatorSerializer {
         }
 
         EICacheMediator cacheMediator = (EICacheMediator) mediator;
-        OMElement cache = fac.createOMElement(CachingConstants.CACHE_LOCAL_NAME, synNS);
-        saveTracingState(cache, mediator);
+        OMElement cacheElem = fac.createOMElement(CachingConstants.CACHE_LOCAL_NAME, synNS);
+        saveTracingState(cacheElem, mediator);
 
         if (cacheMediator.getId() != null) {
             cacheStore = CacheStoreManager.get(cacheMediator.getId());
-            cache.addAttribute(fac.createOMAttribute("id", nullNS, cacheMediator.getId()));
+            cacheElem.addAttribute(fac.createOMAttribute("id", nullNS, cacheMediator.getId()));
         } else {
             cacheStore = CacheStoreManager.get("");
         }
 
         if (cacheMediator.isCollector()) {
-            cache.addAttribute(fac.createOMAttribute("collector", nullNS, "true"));
+            cacheElem.addAttribute(fac.createOMAttribute("collector", nullNS, "true"));
         } else {
-            cache.addAttribute(fac.createOMAttribute("collector", nullNS, "false"));
+            cacheElem.addAttribute(fac.createOMAttribute("collector", nullNS, "false"));
 
             if (cacheMediator.getTimeout() != 0) {
-                cache.addAttribute(
+                cacheElem.addAttribute(
                         fac.createOMAttribute("timeout", nullNS, Long.toString(cacheMediator.getTimeout())));
             }
 
             if (cacheStore.getMaxMessageSize() != 0) {
-                cache.addAttribute(
+                cacheElem.addAttribute(
                         fac.createOMAttribute("maxMessageSize", nullNS,
                                               Integer.toString(cacheStore.getMaxMessageSize())));
             }
@@ -73,11 +74,11 @@ public class EICacheMediatorSerializer extends AbstractMediatorSerializer {
                 onCacheHit = fac.createOMElement("onCacheHit", synNS);
                 onCacheHit.addAttribute(
                         fac.createOMAttribute("sequence", nullNS, cacheMediator.getOnCacheHitRef()));
-                cache.addChild(onCacheHit);
+                cacheElem.addChild(onCacheHit);
             } else if (cacheMediator.getOnCacheHitSequence() != null) {
                 onCacheHit = fac.createOMElement("onCacheHit", synNS);
                 serializeChildren(onCacheHit, cacheMediator.getOnCacheHitSequence().getList());
-                cache.addChild(onCacheHit);
+                cacheElem.addChild(onCacheHit);
             }
 
             if (onCacheHit != null) {
@@ -88,9 +89,9 @@ public class EICacheMediatorSerializer extends AbstractMediatorSerializer {
                 }
             }
 
+            OMElement protocolElem = fac.createOMElement("protocol", synNS);
+            protocolElem.addAttribute(fac.createOMAttribute("type", nullNS, cacheStore.getProtocolType()));
             if (CachingConstants.HTTP_PROTOCOL_TYPE.equals(cacheStore.getProtocolType())) {
-                OMElement protocolElem = fac.createOMElement("protocol", synNS);
-                protocolElem.addAttribute(fac.createOMAttribute("type", nullNS, cacheStore.getProtocolType()));
 
                 String[] methods = cacheMediator.getHTTPMethodsToCache();
                 if (!(methods.length == 0 && "".equals(methods[0]))) {
@@ -127,24 +128,24 @@ public class EICacheMediatorSerializer extends AbstractMediatorSerializer {
                 responseCodesElem.setText(responseCodes);
                 protocolElem.addChild(responseCodesElem);
 
-
-                if (cacheMediator.getDigestGenerator() != null) {
-                    OMElement hashGeneratorElem = fac.createOMElement("hashGenerator", synNS);
-                    hashGeneratorElem.setText(cacheMediator.getDigestGenerator().getClass().getName());
-                    protocolElem.addChild(hashGeneratorElem);
-                }
-
-                cache.addChild(protocolElem);
             }
+
+            if (cacheMediator.getDigestGenerator() != null) {
+                OMElement hashGeneratorElem = fac.createOMElement("hashGenerator", synNS);
+                hashGeneratorElem.setText(cacheMediator.getDigestGenerator().getClass().getName());
+                protocolElem.addChild(hashGeneratorElem);
+            }
+
+            cacheElem.addChild(protocolElem);
 
             if (cacheMediator.getInMemoryCacheSize() > -1) {
                 OMElement implElem = fac.createOMElement("implementation", synNS);
                 implElem.addAttribute(fac.createOMAttribute("maxSize", nullNS,
                                                             Integer.toString(cacheMediator.getInMemoryCacheSize())));
-                cache.addChild(implElem);
+                cacheElem.addChild(implElem);
             }
         }
-        return cache;
+        return cacheElem;
     }
 
     /**

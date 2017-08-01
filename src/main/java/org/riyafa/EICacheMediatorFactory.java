@@ -23,7 +23,6 @@ import org.apache.synapse.config.xml.AbstractMediatorFactory;
 import org.apache.synapse.config.xml.SequenceMediatorFactory;
 import org.apache.synapse.config.xml.XMLConfigConstants;
 
-import java.util.Iterator;
 import java.util.Properties;
 import javax.xml.namespace.QName;
 
@@ -123,6 +122,7 @@ public class EICacheMediatorFactory extends AbstractMediatorFactory {
         EICacheMediator cache = new EICacheMediator();
         OMAttribute idAttr = elem.getAttribute(ATT_ID);
         String id;
+        //get cache store using the id of the mediator
         if (idAttr != null && (id = idAttr.getAttributeValue()) != null) {
             cacheStore = CacheStoreManager.get(id);
             cache.setId(idAttr.getAttributeValue());
@@ -150,15 +150,15 @@ public class EICacheMediatorFactory extends AbstractMediatorFactory {
                 cacheStore.setMaxMessageSize(Integer.parseInt(maxMessageSizeAttr.getAttributeValue()));
             }
 
-            for (Iterator itr = elem.getChildrenWithName(PROTOCOL_Q); itr.hasNext(); ) {
-                OMElement protocolElem = (OMElement) itr.next();
+            OMElement protocolElem = elem.getFirstChildWithName(PROTOCOL_Q);
+            if (protocolElem != null) {
                 OMAttribute typeAttr = protocolElem.getAttribute(ATT_TYPE);
 
                 if (typeAttr != null &&
                         typeAttr.getAttributeValue() != null) {
                     String protocolType = typeAttr.getAttributeValue().toUpperCase();
                     cacheStore.setProtocolType(protocolType);
-                    if (CachingConstants.HTTP_PROTOCOL_TYPE.equals(protocolType)) {
+                    if (CachingConstants.HTTP_PROTOCOL_TYPE.equals(protocolType)) {//Call a different class based on protocol
                         OMElement methodElem = protocolElem.getFirstChildWithName(HTTP_METHODS_TO_CACHE_Q);
                         if (methodElem != null) {
                             String[] methods = methodElem.getText().split(",");
@@ -194,32 +194,31 @@ public class EICacheMediatorFactory extends AbstractMediatorFactory {
                                 cacheStore.setResponseCodes(responses);
                             }
                         }
+                    }
 
-                        OMElement hashGeneratorElem = protocolElem.getFirstChildWithName(HASH_GENERATOR_Q);
-                        if (hashGeneratorElem != null) {
-                            try {
-                                String className = hashGeneratorElem.getText();
-                                if (!"".equals(className)) {
-                                    Class generator = Class.forName(className);
-                                    Object o = generator.newInstance();
-                                    if (o instanceof DigestGenerator) {
-                                        cache.setDigestGenerator((DigestGenerator) o);
-                                    } else {
-                                        handleException("Specified class for the hashGenerator is not a " +
-                                                                "DigestGenerator. It *must* implement " +
-                                                                "org.wso2.carbon.mediator.cache.digest" +
-                                                                ".DigestGenerator interface");
-                                    }
+                    OMElement hashGeneratorElem = protocolElem.getFirstChildWithName(HASH_GENERATOR_Q);
+                    if (hashGeneratorElem != null) {
+                        try {
+                            String className = hashGeneratorElem.getText();
+                            if (!"".equals(className)) {
+                                Class generator = Class.forName(className);
+                                Object o = generator.newInstance();
+                                if (o instanceof DigestGenerator) {
+                                    cache.setDigestGenerator((DigestGenerator) o);
+                                } else {
+                                    handleException("Specified class for the hashGenerator is not a " +
+                                                            "DigestGenerator. It *must* implement " +
+                                                            "org.wso2.carbon.mediator.cache.digest" +
+                                                            ".DigestGenerator interface");
                                 }
-                            } catch (ClassNotFoundException e) {
-                                handleException("Unable to load the hash generator class", e);
-                            } catch (IllegalAccessException e) {
-                                handleException("Unable to access the hash generator class", e);
-                            } catch (InstantiationException e) {
-                                handleException("Unable to instantiate the hash generator class", e);
                             }
+                        } catch (ClassNotFoundException e) {
+                            handleException("Unable to load the hash generator class", e);
+                        } catch (IllegalAccessException e) {
+                            handleException("Unable to access the hash generator class", e);
+                        } catch (InstantiationException e) {
+                            handleException("Unable to instantiate the hash generator class", e);
                         }
-
                     }
                 }
             }
@@ -247,8 +246,8 @@ public class EICacheMediatorFactory extends AbstractMediatorFactory {
                 }
             }
 
-            for (Iterator itr = elem.getChildrenWithName(IMPLEMENTATION_Q); itr.hasNext(); ) {
-                OMElement implElem = (OMElement) itr.next();
+            OMElement implElem = elem.getFirstChildWithName(IMPLEMENTATION_Q);
+            if (implElem != null) {
                 OMAttribute sizeAttr = implElem.getAttribute(ATT_SIZE);
                 if (sizeAttr != null &&
                         sizeAttr.getAttributeValue() != null) {

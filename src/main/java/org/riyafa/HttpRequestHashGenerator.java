@@ -51,7 +51,7 @@ public class HttpRequestHashGenerator implements DigestGenerator {
      * {@inheritDoc}
      */
     public String getDigest(MessageContext msgContext, boolean isGet, String... headers) throws CachingException {
-        boolean excludeAllHeaders = CachingConstants.EXCLUDE_ALL_VAL.equals(headers[0]);
+        boolean excludeAllHeaders = CachingConstants.EXCLUDE_ALL_VAL.equals(headers[0]); //put a *
         //If some or all headers need to be included in the hash
         if (!excludeAllHeaders) {
             Map<String, String> transportHeaders =
@@ -60,7 +60,7 @@ public class HttpRequestHashGenerator implements DigestGenerator {
                 transportHeaders.remove(header);
             }
             //If the HTTP method is GET do not hash the payload. Hash only url and headers.
-            if (isGet) {
+            if (isGet) {//GET, HEAD, DELETE
                 if (msgContext.getTo() == null) {
                     return null;
                 }

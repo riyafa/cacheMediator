@@ -29,7 +29,7 @@ import java.io.Serializable;
  *
  * @see Serializable
  */
-public interface DigestGenerator extends Serializable {
+public interface DigestGenerator extends Serializable {//have a init method
 
     /**
      * This method will be implemented to return the unique XML node identifier
@@ -39,5 +39,5 @@ public interface DigestGenerator extends Serializable {
      * @return Object representing the unique identifier for the msgContext
      * @throws CachingException if there is an error in generating the digest key
      */
-    String getDigest(MessageContext msgContext, boolean isGet, String... headers) throws CachingException;
+    String getDigest(MessageContext msgContext, boolean isGet, String... headers) throws CachingException;//pass only a map
 }

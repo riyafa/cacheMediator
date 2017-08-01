@@ -122,7 +122,7 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
 
     /**
      * The size of the messages to be cached in memory. If this is 0 then no disk cache, and if there is no size
-     * specified in the config  factory will asign a default value to enable disk based caching.
+     * specified in the config  factory will assign a default value to enable disk based caching.
      */
     private int inMemoryCacheSize = -1;
 
@@ -406,7 +406,7 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
         if (CachingConstants.HTTP_PROTOCOL_TYPE.equals(cacheStore.getProtocolType())) {
             String statusCode = msgCtx.getProperty(NhttpConstants.HTTP_SC).toString();
             // Create a Pattern object
-            Pattern r = Pattern.compile(cacheStore.getResponseCodes());
+            Pattern r = Pattern.compile(cacheStore.getResponseCodes());//compile only once
             // Now create matcher object.
             Matcher m = r.matcher(statusCode);
             if (m.matches()) {
@@ -473,7 +473,7 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
                 if (synLog.isTraceOrDebugEnabled()) {
                     synLog.traceOrDebug("Storing the response message into the cache with ID : "
                                                 + id + " for request hash : " + response.getRequestHash());
-                }
+                }//remove
                 if (synLog.isTraceOrDebugEnabled()) {
                     synLog.traceOrDebug(
                             "Storing the response for the message with ID : " + synCtx.getMessageID() + " " +
