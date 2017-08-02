@@ -24,7 +24,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * Finder instance we need to pass some of these parameters to the Collector instance since these parameters are used in
  * the Collector instance.
  */
-public class CacheStoreManager {
+class CacheStoreManager {
     /**
      * Maps the id with the relevant CacheStore
      */
@@ -34,11 +34,11 @@ public class CacheStoreManager {
      * @param id the id of the mediator
      * @return the relevant CacheStore of the mediator
      */
-    public static CacheStore get(String id) {
+    static CacheStore get(String id) {
         CacheStore cacheStore = cacheMap.get(id);
         if (cacheStore == null) {
             cacheStore = new CacheStore();
-            cacheMap.put(id, cacheStore);
+            cacheMap.put(id, cacheStore );
         }
         return cacheStore;
     }

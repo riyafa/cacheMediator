@@ -21,6 +21,7 @@ import org.apache.axiom.om.OMElement;
 import org.apache.axiom.om.OMNode;
 import org.apache.axiom.om.OMProcessingInstruction;
 import org.apache.axiom.om.OMText;
+import org.apache.axis2.Constants;
 import org.apache.axis2.context.MessageContext;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -48,10 +49,20 @@ public class HttpRequestHashGenerator implements DigestGenerator {
     public static final String MD5_DIGEST_ALGORITHM = "MD5";
 
     /**
+     * This value can be specified for the headersToExcludeInHash property to avoid all the headers when caching
+     */
+    public static final String EXCLUDE_ALL_VAL = "*";
+
+    String[] headers = {""};
+
+    /**
      * {@inheritDoc}
      */
-    public String getDigest(MessageContext msgContext, boolean isGet, String... headers) throws CachingException {
-        boolean excludeAllHeaders = CachingConstants.EXCLUDE_ALL_VAL.equals(headers[0]); //put a *
+    public String getDigest(MessageContext msgContext) throws CachingException {
+        boolean excludeAllHeaders = EXCLUDE_ALL_VAL.equals(headers[0]);
+        String method = (String) msgContext.getProperty(Constants.Configuration.HTTP_METHOD);
+        boolean isGet = msgContext.isDoingREST() && (("GET").equals(method) || ("DELETE").equals(method) ||
+                ("HEAD").equals(method));
         //If some or all headers need to be included in the hash
         if (!excludeAllHeaders) {
             Map<String, String> transportHeaders =
@@ -60,7 +71,7 @@ public class HttpRequestHashGenerator implements DigestGenerator {
                 transportHeaders.remove(header);
             }
             //If the HTTP method is GET do not hash the payload. Hash only url and headers.
-            if (isGet) {//GET, HEAD, DELETE
+            if (isGet) {
                 if (msgContext.getTo() == null) {
                     return null;
                 }
@@ -517,5 +528,10 @@ public class HttpRequestHashGenerator implements DigestGenerator {
         }
 
         return map.values();
+    }
+
+    @Override
+    public void init(Map<String, Object> properties) {
+        headers = (String[]) properties.get("headers-to-exclude");
     }
 }

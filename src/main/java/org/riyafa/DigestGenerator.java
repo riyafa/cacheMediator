@@ -19,6 +19,7 @@ package org.riyafa;
 import org.apache.axis2.context.MessageContext;
 
 import java.io.Serializable;
+import java.util.Map;
 
 /**
  * This is the primary interface for the DigestGenerator which is the unique SOAP request
@@ -31,6 +32,8 @@ import java.io.Serializable;
  */
 public interface DigestGenerator extends Serializable {//have a init method
 
+    void init(Map<String, Object> properties);
+
     /**
      * This method will be implemented to return the unique XML node identifier
      * on the given XML node
@@ -39,5 +42,5 @@ public interface DigestGenerator extends Serializable {//have a init method
      * @return Object representing the unique identifier for the msgContext
      * @throws CachingException if there is an error in generating the digest key
      */
-    String getDigest(MessageContext msgContext, boolean isGet, String... headers) throws CachingException;//pass only a map
+    String getDigest(MessageContext msgContext) throws CachingException;//pass only a map
 }

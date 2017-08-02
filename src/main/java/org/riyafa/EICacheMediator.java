@@ -62,9 +62,6 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import javax.xml.stream.XMLStreamException;
 
-/**
- * Created by riyafa on 7/10/17.
- */
 public class EICacheMediator extends AbstractMediator implements ManagedLifecycle, EnclosedInlinedSequence {
 
 
@@ -142,6 +139,8 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
      */
     private CacheStore cacheStore;
 
+    private Pattern responseCodePattern;
+
     /**
      * {@inheritDoc}
      */
@@ -159,6 +158,7 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
             onCacheHitSequence.destroy();
         }
         CacheManager.clean();
+        CacheStoreManager.clean();
     }
 
     /**
@@ -234,14 +234,7 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
                 ((Axis2MessageContext) synCtx).getAxis2MessageContext();
         String requestHash = null;
         try {
-            requestHash = digestGenerator.getDigest(((Axis2MessageContext) synCtx).getAxis2MessageContext(),
-                                                    CachingConstants.HTTP_PROTOCOL_TYPE
-                                                            .equals(cacheStore.getProtocolType()) &&
-                                                            msgCtx.isDoingREST() &&
-                                                            getHTTPMethodsToCache().length == 1 &&
-                                                            getHTTPMethodsToCache()[0]
-                                                                    .equals(CachingConstants.HTTP_METHOD_GET),
-                                                    getHeadersToExcludeInHash());
+            requestHash = digestGenerator.getDigest(((Axis2MessageContext) synCtx).getAxis2MessageContext());
             synCtx.setProperty(CachingConstants.REQUEST_HASH, requestHash);
         } catch (CachingException e) {
             handleException("Error in calculating the hash value of the request", e, synCtx);
@@ -258,126 +251,115 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
         if (cachedResponse.getResponsePayload() != null) {
             // get the response from the cache and attach to the context and change the
             // direction of the message
-            if (!cachedResponse.isExpired()) {
-                if (synLog.isTraceOrDebugEnabled()) {
-                    synLog.traceOrDebug("Cache-hit for message ID : " + synCtx.getMessageID());
-                }
-                // mark as a response and replace envelope from cache
-                synCtx.setResponse(true);
-                try {
-                    byte[] payload = cachedResponse.getResponsePayload();
-                    if (cachedResponse.isJson()) {
-                        OMElement response = JsonUtil.getNewJsonPayload(msgCtx, payload, 0,
-                                                                        payload.length, false, false);
+            if (synLog.isTraceOrDebugEnabled()) {
+                synLog.traceOrDebug("Cache-hit for message ID : " + synCtx.getMessageID());
+            }
+            // mark as a response and replace envelope from cache
+            synCtx.setResponse(true);
+            try {
+                byte[] payload = cachedResponse.getResponsePayload();
+                if (cachedResponse.isJson()) {
+                    OMElement response = JsonUtil.getNewJsonPayload(msgCtx, payload, 0,
+                                                                    payload.length, false, false);
+                    if (msgCtx.getEnvelope().getBody().getFirstElement() != null) {
+                        msgCtx.getEnvelope().getBody().getFirstElement().detach();
+                    }
+                    msgCtx.getEnvelope().getBody().addChild(response);
+
+                } else {
+                    String replacementValue = new String(payload);
+
+                    OMElement response = AXIOMUtil.stringToOM(replacementValue);
+
+                    if (response != null) {
+                        // Set the headers of the message
+                        if (response.getFirstElement().getLocalName().contains(HEADER)) {
+                            Iterator childElements = msgCtx.getEnvelope().getHeader().getChildElements();
+                            while (childElements.hasNext()) {
+                                ((OMElement) childElements.next()).detach();
+                            }
+                            SOAPEnvelope env = synCtx.getEnvelope();
+                            SOAPHeader header = env.getHeader();
+                            SOAPFactory fac = (SOAPFactory) env.getOMFactory();
+
+                            Iterator headers = response.getFirstElement().getChildElements();
+                            while (headers.hasNext()) {
+                                OMElement soapHeader = (OMElement) headers.next();
+                                SOAPHeaderBlock hb = header.addHeaderBlock(soapHeader.getLocalName(),
+                                                                           fac.createOMNamespace(
+                                                                                   soapHeader.getNamespace()
+                                                                                           .getNamespaceURI(),
+                                                                                   soapHeader.getNamespace()
+                                                                                           .getPrefix()));
+                                hb.setText(soapHeader.getText());
+                            }
+                            response.getFirstElement().detach();
+                        }
+                        // Set the body of the message
                         if (msgCtx.getEnvelope().getBody().getFirstElement() != null) {
                             msgCtx.getEnvelope().getBody().getFirstElement().detach();
                         }
-                        msgCtx.getEnvelope().getBody().addChild(response);
-
-                    } else {
-                        String replacementValue = new String(payload);
-
-                        OMElement response = AXIOMUtil.stringToOM(replacementValue);
-
-                        if (response != null) {
-                            // Set the headers of the message
-                            if (response.getFirstElement().getLocalName().contains(HEADER)) {
-                                Iterator childElements = msgCtx.getEnvelope().getHeader().getChildElements();
-                                while (childElements.hasNext()) {
-                                    ((OMElement) childElements.next()).detach();
-                                }
-                                SOAPEnvelope env = synCtx.getEnvelope();
-                                SOAPHeader header = env.getHeader();
-                                SOAPFactory fac = (SOAPFactory) env.getOMFactory();
-
-                                Iterator headers = response.getFirstElement().getChildElements();
-                                while (headers.hasNext()) {
-                                    OMElement soapHeader = (OMElement) headers.next();
-                                    SOAPHeaderBlock hb = header.addHeaderBlock(soapHeader.getLocalName(),
-                                                                               fac.createOMNamespace(
-                                                                                       soapHeader.getNamespace()
-                                                                                               .getNamespaceURI(),
-                                                                                       soapHeader.getNamespace()
-                                                                                               .getPrefix()));
-                                    hb.setText(soapHeader.getText());
-                                }
-                                response.getFirstElement().detach();
-                            }
-                            // Set the body of the message
-                            if (msgCtx.getEnvelope().getBody().getFirstElement() != null) {
-                                msgCtx.getEnvelope().getBody().getFirstElement().detach();
-                            }
-                            msgCtx.getEnvelope().getBody().addChild(response.getFirstElement().getFirstElement());
-
-                        }
+                        msgCtx.getEnvelope().getBody().addChild(response.getFirstElement().getFirstElement());
 
                     }
-                } catch (XMLStreamException | AxisFault e) {
-                    handleException("Error creating response OM from cache : " + id, synCtx);
-                }
-
-                if (CachingConstants.HTTP_PROTOCOL_TYPE.equals(cacheStore.getProtocolType())) {
-                    msgCtx.setProperty(NhttpConstants.HTTP_SC, Integer.parseInt(cachedResponse.getStatusCode()));
-                    msgCtx.setProperty(PassThroughConstants.HTTP_SC_DESC, cachedResponse.getStatusReason());
-                }
-                if (msgCtx.isDoingREST()) {
-
-                    if ((headerProperties = cachedResponse.getHeaderProperties()) != null) {
-
-                        msgCtx.removeProperty(NO_ENTITY_BODY);
-                        msgCtx.removeProperty(Constants.Configuration.CONTENT_TYPE);
-                        msgCtx.setProperty(org.apache.axis2.context.MessageContext.TRANSPORT_HEADERS,
-                                           headerProperties);
-                        msgCtx.setProperty(Constants.Configuration.MESSAGE_TYPE,
-                                           headerProperties.get(Constants.Configuration.MESSAGE_TYPE));
-                    }
-                }
-
-
-                // take specified action on cache hit
-                if (onCacheHitSequence != null) {
-                    // if there is an onCacheHit use that for the mediation
-                    synLog.traceOrDebug("Delegating message to the onCachingHit "
-                                                + "Anonymous sequence");
-                    ContinuationStackManager.addReliantContinuationState(synCtx, 0, getMediatorPosition());
-                    if (onCacheHitSequence.mediate(synCtx)) {
-                        ContinuationStackManager.removeReliantContinuationState(synCtx);
-                    }
-
-                } else if (onCacheHitRef != null) {
-                    if (synLog.isTraceOrDebugEnabled()) {
-                        synLog.traceOrDebug("Delegating message to the onCachingHit " +
-                                                    "sequence : " + onCacheHitRef);
-                    }
-                    ContinuationStackManager.updateSeqContinuationState(synCtx, getMediatorPosition());
-                    synCtx.getSequence(onCacheHitRef).mediate(synCtx);
-
-                } else {
-
-                    if (synLog.isTraceOrDebugEnabled()) {
-                        synLog.traceOrDebug("Request message " + synCtx.getMessageID() +
-                                                    " was served from the cache");
-                    }
-                    // send the response back if there is not onCacheHit is specified
-                    synCtx.setTo(null);
 
                 }
-                //Todo if needed
-                if (!continueExecution) {
-                    Axis2Sender.sendBack(synCtx);
-                    return false;
-                } else {
+            } catch (XMLStreamException | AxisFault e) {
+                handleException("Error creating response OM from cache : " + id, synCtx);
+            }
 
+            if (CachingConstants.HTTP_PROTOCOL_TYPE.equals(cacheStore.getProtocolType())) {
+                msgCtx.setProperty(NhttpConstants.HTTP_SC, Integer.parseInt(cachedResponse.getStatusCode()));
+                msgCtx.setProperty(PassThroughConstants.HTTP_SC_DESC, cachedResponse.getStatusReason());
+            }
+            if (msgCtx.isDoingREST()) {
+
+                if ((headerProperties = cachedResponse.getHeaderProperties()) != null) {
+
+                    msgCtx.removeProperty(NO_ENTITY_BODY);
+                    msgCtx.removeProperty(Constants.Configuration.CONTENT_TYPE);
+                    msgCtx.setProperty(org.apache.axis2.context.MessageContext.TRANSPORT_HEADERS,
+                                       headerProperties);
+                    msgCtx.setProperty(Constants.Configuration.MESSAGE_TYPE,
+                                       headerProperties.get(Constants.Configuration.MESSAGE_TYPE));
                 }
-            } else {
-                cachedResponse.reincarnate(timeout);
-                getMediatorCache().put(requestHash, cachedResponse);
+            }
+
+
+            // take specified action on cache hit
+            if (onCacheHitSequence != null) {
+                // if there is an onCacheHit use that for the mediation
+                synLog.traceOrDebug("Delegating message to the onCachingHit "
+                                            + "Anonymous sequence");
+                ContinuationStackManager.addReliantContinuationState(synCtx, 0, getMediatorPosition());
+                if (onCacheHitSequence.mediate(synCtx)) {
+                    ContinuationStackManager.removeReliantContinuationState(synCtx);
+                }
+
+            } else if (onCacheHitRef != null) {
                 if (synLog.isTraceOrDebugEnabled()) {
-                    synLog.traceOrDebug("Existing cached response has expired. Resetting cache element");
+                    synLog.traceOrDebug("Delegating message to the onCachingHit " +
+                                                "sequence : " + onCacheHitRef);
                 }
+                ContinuationStackManager.updateSeqContinuationState(synCtx, getMediatorPosition());
+                synCtx.getSequence(onCacheHitRef).mediate(synCtx);
 
-                opCtx.setProperty(CachingConstants.CACHED_OBJECT, cachedResponse);
-                Replicator.replicate(opCtx);
+            } else {
+
+                if (synLog.isTraceOrDebugEnabled()) {
+                    synLog.traceOrDebug("Request message " + synCtx.getMessageID() +
+                                                " was served from the cache");
+                }
+                // send the response back if there is not onCacheHit is specified
+                synCtx.setTo(null);
+
+            }
+            //Todo if needed
+            if (!continueExecution) {
+                Axis2Sender.sendBack(synCtx);
+                return false;
+            } else {
+
             }
         }
         return true;
@@ -402,13 +384,11 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
         OperationContext operationContext = msgCtx.getOperationContext();
         CachableResponse response = (CachableResponse) operationContext.getProperty(CachingConstants.CACHED_OBJECT);
 
-        boolean toCache = false;
+        boolean toCache;
         if (CachingConstants.HTTP_PROTOCOL_TYPE.equals(cacheStore.getProtocolType())) {
             String statusCode = msgCtx.getProperty(NhttpConstants.HTTP_SC).toString();
-            // Create a Pattern object
-            Pattern r = Pattern.compile(cacheStore.getResponseCodes());//compile only once
             // Now create matcher object.
-            Matcher m = r.matcher(statusCode);
+            Matcher m = responseCodePattern.matcher(statusCode);
             if (m.matches()) {
                 toCache = true;
                 if (response != null) {
@@ -418,10 +398,18 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
             } else {
                 toCache = false;
             }
+            if (toCache) {
+                toCache = false;
+                String httpMethod = (String) msgCtx.getProperty(Constants.Configuration.HTTP_METHOD);
+                for (String method : hTTPMethodsToCache) {
+                    if (method.equals(httpMethod)) {
+                        toCache = true;
+                    }
+                }
+            }
         } else {
             toCache = true;
         }
-
         if (toCache) {
             if (response != null) {
                 String contentType = ((String) msgCtx.getProperty(Constants.Configuration.CONTENT_TYPE)).split(";")[0];
@@ -488,7 +476,7 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
                             (Map<String, String>) msgCtx.getProperty(
                                     org.apache.axis2.context.MessageContext.TRANSPORT_HEADERS);
                     String messageType = (String) msgCtx.getProperty(Constants.Configuration.MESSAGE_TYPE);
-                    Map<String, Object> headerProperties = new HashMap<String, Object>();
+                    Map<String, Object> headerProperties = new HashMap<>();
                     //Individually copying All TRANSPORT_HEADERS to headerProperties Map instead putting whole
                     //TRANSPORT_HEADERS map as single Key/Value pair to fix hazelcast serialization issue.
                     for (Map.Entry<String, String> entry : headers.entrySet()) {
@@ -529,7 +517,7 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
         LoadingCache<String, CachableResponse> cache = CacheManager.get(id);
         if (cache == null) {
             if (inMemoryCacheSize > -1) {
-                cache = CacheBuilder.newBuilder().expireAfterWrite(CachingConstants.CACHE_INVALIDATION_TIME,
+                cache = CacheBuilder.newBuilder().expireAfterWrite(timeout,
                                                                    TimeUnit.SECONDS).maximumSize(inMemoryCacheSize)
                         .build(new CacheLoader<String, CachableResponse>() {
                             @Override
@@ -538,7 +526,7 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
                             }
                         });
             } else {
-                cache = CacheBuilder.newBuilder().expireAfterWrite(CachingConstants.CACHE_INVALIDATION_TIME,
+                cache = CacheBuilder.newBuilder().expireAfterWrite(timeout,
                                                                    TimeUnit.SECONDS).build(
                         new CacheLoader<String, CachableResponse>() {
                             @Override
@@ -751,5 +739,9 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
      */
     public void setCacheStore(CacheStore cacheStore) {
         this.cacheStore = cacheStore;
+    }
+
+    public void initPattern() {
+        responseCodePattern = Pattern.compile(cacheStore.getResponseCodes());
     }
 }

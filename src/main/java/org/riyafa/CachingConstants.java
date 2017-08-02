@@ -76,11 +76,6 @@ public class CachingConstants {
     public static final String CACHE_KEY = "cacheKey";
 
     /**
-     * This value can be specified for the headersToExcludeInHash property to avoid all the headers when caching
-     */
-    public static final String EXCLUDE_ALL_VAL = "exclude-all";
-
-    /**
      * Default cache invalidation time
      */
     public static final Integer CACHE_INVALIDATION_TIME = 24 * 3600;
