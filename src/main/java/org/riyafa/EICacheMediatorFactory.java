@@ -132,6 +132,8 @@ public class EICacheMediatorFactory extends AbstractMediatorFactory {
             cacheStore = CacheStoreManager.get("");
         }
 
+        cache.setCacheStore(cacheStore);
+
         OMAttribute collectorAttr = elem.getAttribute(ATT_COLLECTOR);
         if (collectorAttr != null && collectorAttr.getAttributeValue() != null &&
                 "true".equals(collectorAttr.getAttributeValue())) {
@@ -261,7 +263,6 @@ public class EICacheMediatorFactory extends AbstractMediatorFactory {
                 }
             }
         }
-        cache.setCacheStore(cacheStore);
         return cache;
     }
 
