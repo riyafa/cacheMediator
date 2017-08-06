@@ -32,6 +32,31 @@ public class CacheStore {
      */
     private String protocolType = CachingConstants.HTTP_PROTOCOL_TYPE;
 
+    private String httpMethod = null;
+
+    /**
+     * The http method type that needs to be cached
+     */
+    private String[] hTTPMethodsToCache = {CachingConstants.HTTP_METHOD_GET};
+
+    /**
+     * This method gives the HTTP method that needs to be cached
+     *
+     * @return the HTTP method to be cached
+     */
+    public String[] getHTTPMethodsToCache() {
+        return hTTPMethodsToCache;
+    }
+
+    /**
+     * This sets the HTTP method that needs to be cached
+     *
+     * @param hTTPMethodToCache the HTTP method to be cached
+     */
+    public void setHTTPMethodsToCache(String... hTTPMethodToCache) {
+        this.hTTPMethodsToCache = hTTPMethodToCache;
+    }
+
     /**
      * @return the protocol type of the messages
      */
@@ -80,5 +105,13 @@ public class CacheStore {
      */
     public void setMaxMessageSize(int maxMessageSize) {
         this.maxMessageSize = maxMessageSize;
+    }
+
+    public String getHttpMethod() {
+        return httpMethod;
+    }
+
+    public void setHttpMethod(String httpMethod) {
+        this.httpMethod = httpMethod;
     }
 }

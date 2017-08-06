@@ -137,8 +137,8 @@ public class EICacheMediatorFactory extends AbstractMediatorFactory {
         OMAttribute collectorAttr = elem.getAttribute(ATT_COLLECTOR);
         if (collectorAttr != null && collectorAttr.getAttributeValue() != null &&
                 "true".equals(collectorAttr.getAttributeValue())) {
-
             cache.setCollector(true);
+            cache.initPattern();
         } else {
             cache.setCollector(false);
 
@@ -201,7 +201,7 @@ public class EICacheMediatorFactory extends AbstractMediatorFactory {
                                         handleException("Unexpected method type: " + methods[i]);
                                     }
                                 }
-                                cache.setHTTPMethodsToCache(methods);
+                                cacheStore.setHTTPMethodsToCache(methods);
                             }
                         }
 
@@ -224,7 +224,6 @@ public class EICacheMediatorFactory extends AbstractMediatorFactory {
                                 cacheStore.setResponseCodes(responses);
                             }
                         }
-                        cache.initPattern();
                         props.put("headers-to-exclude", cache.getHeadersToExcludeInHash());
                     }
                 }

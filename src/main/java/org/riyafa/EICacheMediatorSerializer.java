@@ -93,7 +93,7 @@ public class EICacheMediatorSerializer extends AbstractMediatorSerializer {
             protocolElem.addAttribute(fac.createOMAttribute("type", nullNS, cacheStore.getProtocolType()));
             if (CachingConstants.HTTP_PROTOCOL_TYPE.equals(cacheStore.getProtocolType())) {
 
-                String[] methods = cacheMediator.getHTTPMethodsToCache();
+                String[] methods = cacheStore.getHTTPMethodsToCache();
                 if (!(methods.length == 0 && "".equals(methods[0]))) {
                     StringBuilder method = new StringBuilder();
                     for (int i = 0; i < methods.length; i++) {

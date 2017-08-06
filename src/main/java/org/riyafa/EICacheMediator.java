@@ -102,10 +102,6 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
      */
     private boolean continueExecution = false;
 
-    /**
-     * The http method type that needs to be cached
-     */
-    private String[] hTTPMethodsToCache = {CachingConstants.HTTP_METHOD_GET};
 
     /**
      * The headers to exclude when caching
@@ -233,6 +229,7 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
         org.apache.axis2.context.MessageContext msgCtx =
                 ((Axis2MessageContext) synCtx).getAxis2MessageContext();
         String requestHash = null;
+        cacheStore.setHttpMethod((String) msgCtx.getProperty(Constants.Configuration.HTTP_METHOD));
         try {
             requestHash = digestGenerator.getDigest(((Axis2MessageContext) synCtx).getAxis2MessageContext());
             synCtx.setProperty(CachingConstants.REQUEST_HASH, requestHash);
@@ -352,15 +349,11 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
                 }
                 // send the response back if there is not onCacheHit is specified
                 synCtx.setTo(null);
-
-            }
-            //Todo if needed
-            if (!continueExecution) {
+                //Todo if needed
                 Axis2Sender.sendBack(synCtx);
-                return false;
-            } else {
 
             }
+            return false;
         }
         return true;
     }
@@ -400,8 +393,8 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
             }
             if (toCache) {
                 toCache = false;
-                String httpMethod = (String) msgCtx.getProperty(Constants.Configuration.HTTP_METHOD);
-                for (String method : hTTPMethodsToCache) {
+                String httpMethod = cacheStore.getHttpMethod();
+                for (String method : cacheStore.getHTTPMethodsToCache()) {
                     if (method.equals(httpMethod)) {
                         toCache = true;
                     }
@@ -624,24 +617,6 @@ public class EICacheMediator extends AbstractMediator implements ManagedLifecycl
      */
     public void setCollector(boolean collector) {
         this.collector = collector;
-    }
-
-    /**
-     * This method gives the HTTP method that needs to be cached
-     *
-     * @return the HTTP method to be cached
-     */
-    public String[] getHTTPMethodsToCache() {
-        return hTTPMethodsToCache;
-    }
-
-    /**
-     * This sets the HTTP method that needs to be cached
-     *
-     * @param hTTPMethodToCache the HTTP method to be cached
-     */
-    public void setHTTPMethodsToCache(String... hTTPMethodToCache) {
-        this.hTTPMethodsToCache = hTTPMethodToCache;
     }
 
     /**
