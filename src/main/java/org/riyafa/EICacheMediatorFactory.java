@@ -97,6 +97,11 @@ public class EICacheMediatorFactory extends AbstractMediatorFactory {
     private static final QName HASH_GENERATOR_Q = new QName(XMLConfigConstants.SYNAPSE_NAMESPACE, "hashGenerator");
 
     /**
+     * Attribute QName of the digest generator for backward compatibility
+     */
+    private static final QName ATT_HASH_GENERATOR = new QName("hashGenerator");
+
+    /**
      * QName of the cache implementation
      */
     private static final QName IMPLEMENTATION_Q = new QName(XMLConfigConstants.SYNAPSE_NAMESPACE, "implementation");
@@ -154,6 +159,7 @@ public class EICacheMediatorFactory extends AbstractMediatorFactory {
                 cacheStore.setMaxMessageSize(Integer.parseInt(maxMessageSizeAttr.getAttributeValue()));
             }
 
+            String className = null;
             OMElement protocolElem = elem.getFirstChildWithName(PROTOCOL_Q);
             Map<String, Object> props = new HashMap<>();
             if (protocolElem != null) {
@@ -163,27 +169,7 @@ public class EICacheMediatorFactory extends AbstractMediatorFactory {
                         typeAttr.getAttributeValue() != null) {
                     OMElement hashGeneratorElem = protocolElem.getFirstChildWithName(HASH_GENERATOR_Q);
                     if (hashGeneratorElem != null) {
-                        try {
-                            String className = hashGeneratorElem.getText();
-                            if (!"".equals(className)) {
-                                Class generator = Class.forName(className);
-                                Object o = generator.newInstance();
-                                if (o instanceof DigestGenerator) {
-                                    cache.setDigestGenerator((DigestGenerator) o);
-                                } else {
-                                    handleException("Specified class for the hashGenerator is not a " +
-                                                            "DigestGenerator. It *must* implement " +
-                                                            "org.wso2.carbon.mediator.cache.digest" +
-                                                            ".DigestGenerator interface");
-                                }
-                            }
-                        } catch (ClassNotFoundException e) {
-                            handleException("Unable to load the hash generator class", e);
-                        } catch (IllegalAccessException e) {
-                            handleException("Unable to access the hash generator class", e);
-                        } catch (InstantiationException e) {
-                            handleException("Unable to instantiate the hash generator class", e);
-                        }
+                        className = hashGeneratorElem.getText();
                     }
 
                     String protocolType = typeAttr.getAttributeValue().toUpperCase();
@@ -226,6 +212,32 @@ public class EICacheMediatorFactory extends AbstractMediatorFactory {
                         }
                         props.put("headers-to-exclude", cache.getHeadersToExcludeInHash());
                     }
+                }
+            } else {
+                OMAttribute hashGeneratorAttr = elem.getAttribute(ATT_HASH_GENERATOR);
+                if (hashGeneratorAttr != null && hashGeneratorAttr.getAttributeValue() != null) {
+                    className = hashGeneratorAttr.getAttributeValue();
+                }
+            }
+            if (className != null && !"".equals(className)) {
+                try {
+                    Class generator = Class.forName(className);
+                    Object o = generator.newInstance();
+                    if (o instanceof DigestGenerator) {
+                        cache.setDigestGenerator((DigestGenerator) o);
+                    } else {
+                        handleException("Specified class for the hashGenerator is not a " +
+                                                "DigestGenerator. It *must* implement " +
+                                                "org.wso2.carbon.mediator.cache.digest" +
+                                                ".DigestGenerator interface");
+                    }
+
+                } catch (ClassNotFoundException e) {
+                    handleException("Unable to load the hash generator class", e);
+                } catch (IllegalAccessException e) {
+                    handleException("Unable to access the hash generator class", e);
+                } catch (InstantiationException e) {
+                    handleException("Unable to instantiate the hash generator class", e);
                 }
             }
             cache.getDigestGenerator().init(props);
